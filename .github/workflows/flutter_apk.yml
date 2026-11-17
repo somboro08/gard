@@ -10,7 +10,7 @@ env:
 
 jobs:
   build-apk:
-    name: Build APK release
+    name: Build APK debug
     runs-on: ubuntu-latest
     steps:
       - name: Checkout du code
@@ -72,13 +72,13 @@ jobs:
         run: flutter test
         continue-on-error: true
 
-      - name: Construire l'APK release
-        run: flutter build apk --release
+      - name: Construire l'APK debug
+        run: flutter build apk
 
       - name: Déposer l'APK en artefact
         uses: actions/upload-artifact@v4
         with:
-          name: garde-apk-release
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: garde-apk-debug
+          path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 30
           overwrite: true

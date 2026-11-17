@@ -27,7 +27,7 @@ class ActionTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Material(
-        color: selected ? p.goldTint.withValues(alpha: 0.55) : Colors.transparent,
+        color: selected ? p.goldTint.withOpacity(0.55) : Colors.transparent,
         borderRadius: BorderRadius.circular(18),
         child: InkWell(
           borderRadius: BorderRadius.circular(18),

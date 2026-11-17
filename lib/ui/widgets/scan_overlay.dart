@@ -61,7 +61,7 @@ class _OverlayPainter extends CustomPainter {
       Path()..addRect(Offset.zero & size),
       Path()..addRRect(rrect),
     );
-    canvas.drawPath(dim, Paint()..color = Colors.black.withValues(alpha: 0.58));
+    canvas.drawPath(dim, Paint()..color = Colors.black.withOpacity(0.58));
 
     final stroke = Paint()
       ..color = color

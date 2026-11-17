@@ -79,7 +79,7 @@ class AppField extends StatelessWidget {
         floatingLabelStyle: TextStyle(fontSize: 16, color: p.goldText, fontWeight: FontWeight.w600),
         hintStyle: TextStyle(
           fontSize: big ? 22 : 17,
-          color: p.textSoft.withValues(alpha: 0.6),
+          color: p.textSoft.withOpacity(0.6),
           fontWeight: FontWeight.w400,
           letterSpacing: 0,
         ),

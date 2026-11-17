@@ -82,7 +82,7 @@ class GhostButton extends StatelessWidget {
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
           foregroundColor: color,
-          side: BorderSide(color: danger ? p.danger.withValues(alpha: 0.5) : p.divider, width: 1.5),
+          side: BorderSide(color: danger ? p.danger.withOpacity(0.5) : p.divider, width: 1.5),
           shape: const StadiumBorder(),
           textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
         ),

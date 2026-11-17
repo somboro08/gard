@@ -168,7 +168,7 @@ ThemeData buildTheme(Brightness brightness) {
     textSelectionTheme: TextSelectionThemeData(
       cursorColor: p.gold,
       selectionHandleColor: p.gold,
-      selectionColor: p.gold.withValues(alpha: 0.30),
+      selectionColor: p.gold.withOpacity(0.30),
     ),
     navigationBarTheme: NavigationBarThemeData(
       height: 76,

@@ -334,7 +334,7 @@ class _FindPageState extends State<FindPage> with SingleTickerProviderStateMixin
                     dividerColor: p.divider,
                     labelColor: p.text,
                     unselectedLabelColor: p.textSoft,
-                    overlayColor: WidgetStatePropertyAll(p.goldTint.withValues(alpha: 0.5)),
+                    overlayColor: WidgetStatePropertyAll(p.goldTint.withOpacity(0.5)),
                   ),
                   _filterRow(byDay[_day], now),
                   Expanded(

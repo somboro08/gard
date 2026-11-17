@@ -119,12 +119,12 @@ Ce dépôt ne commite pas les dossiers `android/` et `ios/` : ils sont régéné
 2. régénère `android/` avec `flutter create --platforms=android --org bj.mrl` ;
 3. applique `tool/setup_platforms.dart` (caméra, minSdk 24, etc.) ;
 4. lance `flutter pub get`, `flutter analyze` et `flutter test` ;
-5. build l'APK release (`flutter build apk --release`) ;
-6. dépose l'APK comme artefact téléchargeable (nom : `garde-apk-release`, conservé 30 jours).
+5. build l'APK **debug** (`flutter build apk`) — pas de keystore nécessaire ;
+6. dépose l'APK comme artefact téléchargeable (nom : `garde-apk-debug`, conservé 30 jours).
 
 L'APK finale se trouve sur le runner à :
 ```
-build/app/outputs/flutter-apk/app-release.apk
+build/app/outputs/flutter-apk/app-debug.apk
 ```
 et est jointe à l'exécution du workflow. Télécharge-la depuis l'onglet **Actions** → sélectionne le run → artefacts.
 

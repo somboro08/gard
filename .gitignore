@@ -1,0 +1,18 @@
+# --- Dart / Flutter ---
+.dart_tool/
+.packages
+pubspec.lock
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iws
+.idea/
+*.iml
+.DS_Store
+.env
+.metadata
+
+# --- Plateformes générées par `flutter create` dans la CI ---
+# (pas commitées : recréées à chaque build d'APK)
+android/
+ios/

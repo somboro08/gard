@@ -103,6 +103,19 @@ class _VehiclePageState extends State<VehiclePage> {
     final v = _v;
     if (v == null || _busy) return;
 
+    // Paiement : à encaisser avant de remettre le véhicule.
+    if (v.balance > 0) {
+      final paid = await confirmDialog(
+        context,
+        title: 'Paiement à encaisser',
+        message: '${Fmt.money(v.balance)} à encaisser en espèces avant la remise du véhicule.',
+        confirmLabel: 'Encaissé',
+      );
+      if (!paid || !mounted) return;
+      await AppScope.read(context).recordPayment(v);
+      if (!mounted) return;
+    }
+
     final issues = <String>[];
     if (!_ticketOk) issues.add('Le ticket du client n\'a pas été validé.');
     if (v.hasPlate) {
@@ -154,6 +167,21 @@ class _VehiclePageState extends State<VehiclePage> {
     }
   }
 
+  Future<void> _cashIn(Vehicle v) async {
+    final ok = await confirmDialog(
+      context,
+      title: 'Encaisser en espèces',
+      message: '${Fmt.money(v.balance)} reçus du client ?',
+      confirmLabel: 'Encaissé',
+    );
+    if (!ok || !mounted) return;
+    await AppScope.read(context).recordPayment(v);
+    HapticFeedback.mediumImpact();
+    if (!mounted) return;
+    await _load();
+    if (mounted) showToast(context, 'Paiement enregistré.');
+  }
+
   Future<void> _edit(Vehicle v) async {
     await context.push('/vehicle/${v.id}/edit', extra: v);
     if (mounted) {
@@ -169,7 +197,7 @@ class _VehiclePageState extends State<VehiclePage> {
     final ok = await confirmDialog(
       context,
       title: 'Supprimer ce véhicule ?',
-      message: 'L\'enregistrement sera supprimé de cet appareil. Utilisez ceci uniquement pour corriger une erreur de saisie.',
+      message: 'L\'enregistrement et ses paiements seront supprimés de cet appareil (les revenus du jour changeront). Utilisez ceci uniquement pour corriger une erreur de saisie.',
       confirmLabel: 'Supprimer',
       danger: true,
     );
@@ -313,6 +341,26 @@ class _VehiclePageState extends State<VehiclePage> {
               label: 'Fin de garde',
               value: Fmt.full(v.dueAt),
               valueColor: status == VehicleStatus.nonRecupere ? p.danger : null,
+            ),
+            InfoRow(
+              icon: AppIcons.wallet,
+              label: 'Paiement',
+              value: v.price == 0
+                  ? 'Gratuit'
+                  : v.isPaid
+                      ? 'Payé · ${Fmt.money(v.price)}'
+                      : '${Fmt.money(v.balance)} à payer',
+              valueColor: v.price == 0 ? null : (v.isPaid ? p.success : p.warn),
+              trailing: (!v.isCollected && v.balance > 0)
+                  ? TextButton(
+                      onPressed: () => _cashIn(v),
+                      style: TextButton.styleFrom(
+                        foregroundColor: p.goldText,
+                        textStyle: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700),
+                      ),
+                      child: const Text('Encaisser'),
+                    )
+                  : null,
             ),
             InfoRow(
               icon: AppIcons.ticket,

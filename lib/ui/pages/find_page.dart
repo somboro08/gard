@@ -15,6 +15,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/fluid.dart';
 import '../widgets/pills.dart';
 import '../widgets/vehicle_ui.dart';
+import '../widgets/week_widgets.dart';
 
 enum _Filter {
   all('Tous', null),
@@ -207,6 +208,12 @@ class _FindPageState extends State<FindPage> with SingleTickerProviderStateMixin
           ),
           IconButton(
             iconSize: 26,
+            tooltip: 'Revenus',
+            onPressed: () => context.push('/revenue'),
+            icon: const Icon(AppIcons.wallet),
+          ),
+          IconButton(
+            iconSize: 26,
             tooltip: 'Réglages',
             onPressed: () => showSettingsSheet(context),
             icon: const Icon(AppIcons.more),
@@ -293,7 +300,7 @@ class _FindPageState extends State<FindPage> with SingleTickerProviderStateMixin
 
     return Column(
       children: [
-        _WeekBar(
+        WeekBar(
           start: _weekStart,
           isCurrent: isCurrentWeek,
           onPrev: () => _shiftWeek(-1),
@@ -312,29 +319,13 @@ class _FindPageState extends State<FindPage> with SingleTickerProviderStateMixin
                 if (i >= 0 && i < 7) byDay[i].add(v);
               }
 
-              final tabs = <Widget>[
-                for (var i = 0; i < 7; i++)
-                  _DayTab(
-                    date: Fmt.addDays(_weekStart, i),
-                    today: today,
-                    hasItems: byDay[i].isNotEmpty,
-                  ),
-              ];
-
               return Column(
                 children: [
-                  TabBar(
+                  DayTabBar(
                     controller: _tabs,
-                    tabs: tabs,
-                    padding: EdgeInsets.zero,
-                    labelPadding: EdgeInsets.zero,
-                    indicatorColor: p.gold,
-                    indicatorWeight: 3.5,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    dividerColor: p.divider,
-                    labelColor: p.text,
-                    unselectedLabelColor: p.textSoft,
-                    overlayColor: WidgetStatePropertyAll(p.goldTint.withOpacity(0.5)),
+                    weekStart: _weekStart,
+                    today: today,
+                    marked: [for (final d in byDay) d.isNotEmpty],
                   ),
                   _filterRow(byDay[_day], now),
                   Expanded(
@@ -380,97 +371,6 @@ class _FindPageState extends State<FindPage> with SingleTickerProviderStateMixin
                 },
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WeekBar extends StatelessWidget {
-  const _WeekBar({
-    required this.start,
-    required this.isCurrent,
-    required this.onPrev,
-    required this.onNext,
-    required this.onToday,
-  });
-
-  final DateTime start;
-  final bool isCurrent;
-  final VoidCallback onPrev;
-  final VoidCallback? onNext;
-  final VoidCallback onToday;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.pal;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-      child: Row(
-        children: [
-          IconButton(
-            iconSize: 24,
-            tooltip: 'Semaine précédente',
-            onPressed: onPrev,
-            icon: const Icon(AppIcons.chevronLeft),
-          ),
-          Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: onToday,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Text(
-                  isCurrent ? 'Cette semaine · ${Fmt.weekRange(start)}' : Fmt.weekRange(start),
-                  textAlign: TextAlign.center,
-                  style: context.tt.titleSmall?.copyWith(color: isCurrent ? p.goldText : p.text),
-                ),
-              ),
-            ),
-          ),
-          IconButton(
-            iconSize: 24,
-            tooltip: 'Semaine suivante',
-            onPressed: onNext,
-            icon: const Icon(AppIcons.chevronRight),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DayTab extends StatelessWidget {
-  const _DayTab({required this.date, required this.today, required this.hasItems});
-
-  final DateTime date;
-  final DateTime today;
-  final bool hasItems;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.pal;
-    return Tab(
-      height: 68,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            Fmt.dayShort(date, today: today),
-            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, letterSpacing: 0.6),
-          ),
-          const SizedBox(height: 2),
-          Text('${date.day}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 3),
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: hasItems ? p.gold : Colors.transparent,
-            ),
-          ),
         ],
       ),
     );

@@ -15,7 +15,8 @@ import '../widgets/empty_state.dart';
 import '../widgets/feedback.dart';
 import '../widgets/info_row.dart';
 
-/// Ticket remis au client après l'enregistrement : QR + code à 6 chiffres.
+/// Ticket remis au client après l'enregistrement : QR + code à 6 chiffres,
+/// montant à payer et encaissement en espèces.
 class TicketPage extends StatefulWidget {
   const TicketPage({super.key, required this.id});
 
@@ -26,7 +27,8 @@ class TicketPage extends StatefulWidget {
 }
 
 class _TicketPageState extends State<TicketPage> {
-  late final Future<Vehicle?> _future;
+  Vehicle? _vehicle;
+  bool _loading = true;
 
   static const _ink = Color(0xFF111111);
   static const _inkSoft = Color(0xFF667781);
@@ -34,7 +36,16 @@ class _TicketPageState extends State<TicketPage> {
   @override
   void initState() {
     super.initState();
-    _future = AppScope.read(context).vehicleById(widget.id);
+    _load();
+  }
+
+  Future<void> _load() async {
+    final v = await AppScope.read(context).vehicleById(widget.id);
+    if (!mounted) return;
+    setState(() {
+      _vehicle = v;
+      _loading = false;
+    });
   }
 
   Future<void> _copy(String code) async {
@@ -42,10 +53,26 @@ class _TicketPageState extends State<TicketPage> {
     if (mounted) showToast(context, 'Code copié.');
   }
 
+  Future<void> _cashIn(Vehicle v) async {
+    final ok = await confirmDialog(
+      context,
+      title: 'Encaisser en espèces',
+      message: '${Fmt.money(v.balance)} reçus du client ?',
+      confirmLabel: 'Encaissé',
+    );
+    if (!ok || !mounted) return;
+    await AppScope.read(context).recordPayment(v);
+    HapticFeedback.mediumImpact();
+    if (!mounted) return;
+    await _load();
+    if (mounted) showToast(context, 'Paiement enregistré.');
+  }
+
   Future<void> _whatsapp(Vehicle v, String centerName) async {
     final text = 'Ticket de garde — $centerName\n'
         'Code : ${Fmt.code(v.code)}\n'
         '${v.hasPlate ? 'Plaque : ${v.plate}\n' : ''}'
+        '${v.price > 0 ? 'Montant : ${Fmt.money(v.price)} (${v.isPaid ? 'payé' : 'à payer'})\n' : ''}'
         'Déposé le ${Fmt.full(v.depositedAt)}\n'
         'À récupérer avant le ${Fmt.full(v.dueAt)}.\n\n'
         'Présentez ce code (ou le QR) pour récupérer votre véhicule.';
@@ -68,139 +95,162 @@ class _TicketPageState extends State<TicketPage> {
   @override
   Widget build(BuildContext context) {
     final p = context.pal;
+    final v = _vehicle;
     return Scaffold(
       backgroundColor: p.bg,
       appBar: simpleBar(context, 'Ticket de garde', leadingIcon: AppIcons.close),
-      body: FutureBuilder<Vehicle?>(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final v = snap.data;
-          if (v == null) {
-            return const EmptyState(icon: AppIcons.warning, title: 'Ticket introuvable');
-          }
-          final centerName = AppScope.read(context).centerById(v.centerId)?.name ?? 'Garde';
-          return SafeArea(
-            top: false,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-              children: [
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: 1),
-                  duration: const Duration(milliseconds: 520),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, t, child) => Opacity(
-                    opacity: t,
-                    child: Transform.scale(scale: 0.94 + 0.06 * t, child: child),
-                  ),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(color: p.gold, width: 3),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          centerName,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: _ink,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text(
-                          'Ticket de garde',
-                          style: TextStyle(fontSize: 14.5, color: _inkSoft),
-                        ),
-                        const SizedBox(height: 14),
-                        QrImageView(
-                          data: Tickets.encode(v.code),
-                          size: 230,
-                          backgroundColor: Colors.white,
-                          eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: _ink),
-                          dataModuleStyle: const QrDataModuleStyle(
-                            dataModuleShape: QrDataModuleShape.square,
-                            color: _ink,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          Fmt.code(v.code),
-                          style: const TextStyle(
-                            fontSize: 40,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 5,
-                            color: _ink,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                InfoCard(
-                  children: [
-                    InfoRow(
-                      icon: AppIcons.car,
-                      label: 'Plaque',
-                      value: v.hasPlate ? v.plate : 'Sans plaque',
-                    ),
-                    InfoRow(icon: AppIcons.user, label: 'Propriétaire', value: v.ownerName),
-                    InfoRow(
-                      icon: AppIcons.calendar,
-                      label: 'Déposé le',
-                      value: Fmt.full(v.depositedAt),
-                    ),
-                    InfoRow(
-                      icon: AppIcons.clock,
-                      label: 'À récupérer avant',
-                      value: Fmt.full(v.dueAt),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'Demandez au client de garder ce ticket (capture d\'écran ou WhatsApp). '
-                  'Il devra le présenter pour récupérer son véhicule.',
-                  style: context.tt.bodySmall?.copyWith(height: 1.4),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: GhostButton(
-                        label: 'Copier',
-                        icon: AppIcons.copy,
-                        onPressed: () => _copy(v.code),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: GhostButton(
-                        label: 'WhatsApp',
-                        icon: AppIcons.send,
-                        onPressed: () => _whatsapp(v, centerName),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                PrimaryButton(
-                  label: 'Terminé',
-                  icon: AppIcons.check,
-                  onPressed: () => goBack(context),
-                ),
-              ],
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : v == null
+              ? const EmptyState(icon: AppIcons.warning, title: 'Ticket introuvable')
+              : _content(context, v),
+    );
+  }
+
+  Widget _content(BuildContext context, Vehicle v) {
+    final p = context.pal;
+    final centerName = AppScope.read(context).centerById(v.centerId)?.name ?? 'Garde';
+    final due = v.balance;
+
+    return SafeArea(
+      top: false,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+        children: [
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 520),
+            curve: Curves.easeOutCubic,
+            builder: (context, t, child) => Opacity(
+              opacity: t,
+              child: Transform.scale(scale: 0.94 + 0.06 * t, child: child),
             ),
-          );
-        },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: p.gold, width: 3),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    centerName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: _ink,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Ticket de garde',
+                    style: TextStyle(fontSize: 14.5, color: _inkSoft),
+                  ),
+                  const SizedBox(height: 14),
+                  QrImageView(
+                    data: Tickets.encode(v.code),
+                    size: 230,
+                    backgroundColor: Colors.white,
+                    eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: _ink),
+                    dataModuleStyle: const QrDataModuleStyle(
+                      dataModuleShape: QrDataModuleShape.square,
+                      color: _ink,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    Fmt.code(v.code),
+                    style: const TextStyle(
+                      fontSize: 40,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 5,
+                      color: _ink,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          InfoCard(
+            children: [
+              InfoRow(
+                icon: AppIcons.car,
+                label: 'Plaque',
+                value: v.hasPlate ? v.plate : 'Sans plaque',
+              ),
+              InfoRow(icon: AppIcons.user, label: 'Propriétaire', value: v.ownerName),
+              InfoRow(
+                icon: AppIcons.calendar,
+                label: 'Déposé le',
+                value: Fmt.full(v.depositedAt),
+              ),
+              InfoRow(
+                icon: AppIcons.clock,
+                label: 'À récupérer avant',
+                value: Fmt.full(v.dueAt),
+              ),
+              InfoRow(
+                icon: AppIcons.wallet,
+                label: 'Montant',
+                value: v.price == 0
+                    ? 'Gratuit'
+                    : v.isPaid
+                        ? 'Payé · ${Fmt.money(v.price)}'
+                        : '${Fmt.money(due)} à payer',
+                valueColor: v.price == 0 ? null : (v.isPaid ? p.success : p.warn),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Demandez au client de garder ce ticket (capture d\'écran ou WhatsApp). '
+            'Il devra le présenter pour récupérer son véhicule.',
+            style: context.tt.bodySmall?.copyWith(height: 1.4),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: GhostButton(
+                  label: 'Copier',
+                  icon: AppIcons.copy,
+                  onPressed: () => _copy(v.code),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: GhostButton(
+                  label: 'WhatsApp',
+                  icon: AppIcons.send,
+                  onPressed: () => _whatsapp(v, centerName),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (due > 0) ...[
+            PrimaryButton(
+              label: 'Encaisser ${Fmt.money(due)}',
+              icon: AppIcons.wallet,
+              onPressed: () => _cashIn(v),
+            ),
+            const SizedBox(height: 10),
+            GhostButton(
+              label: 'Terminé · payer à la sortie',
+              icon: AppIcons.check,
+              onPressed: () => goBack(context),
+            ),
+          ] else
+            PrimaryButton(
+              label: 'Terminé',
+              icon: AppIcons.check,
+              onPressed: () => goBack(context),
+            ),
+        ],
       ),
     );
   }

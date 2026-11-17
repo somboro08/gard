@@ -15,6 +15,7 @@ abstract class ParkingRepository {
     required String name,
     required String location,
     required int guardHours,
+    required Tariff tariff,
   });
   Future<void> deleteCenter(String id);
 
@@ -27,8 +28,11 @@ abstract class ParkingRepository {
     required String ownerPhone,
     required String note,
     required int guardHours,
+    required int price,
     DateTime? now,
   });
+
+  /// Met à jour plaque, type, propriétaire, téléphone, remarque et prix.
   Future<void> updateVehicle(Vehicle v);
   Future<void> markCollected(
     String id, {
@@ -49,6 +53,22 @@ abstract class ParkingRepository {
   Future<List<Vehicle>> activeVehicles(String centerId);
   Future<List<Vehicle>> activeByPlateKey(String centerId, String key);
   Future<List<Vehicle>> search(String centerId, String query, {int limit = 80});
+
+  // Paiements
+  /// Enregistre un encaissement et l'ajoute au montant payé du véhicule.
+  Future<Payment> addPayment({
+    required String vehicleId,
+    required String centerId,
+    required int amount,
+    required PaymentMethod method,
+    DateTime? at,
+  });
+
+  /// Paiements encaissés dans [from, to[ (avec plaque / propriétaire du véhicule).
+  Future<List<Payment>> paymentsBetween(String centerId, DateTime from, DateTime to);
+
+  /// Somme restant à encaisser sur les véhicules encore en garde.
+  Future<int> pendingAmount(String centerId);
 
   // Réglages (thème, centre courant…)
   Future<String?> getSetting(String key);

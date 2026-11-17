@@ -33,9 +33,16 @@ flutter run                            # sur un vrai téléphone (la caméra est
 | **Premier lancement** | Créer le 1er centre : nom, lieu, durée de garde (6 h, 12 h, 24 h, 48 h ou personnalisée) |
 | **Retrouver** (onglet 1) | Semaine en onglets (LUN…DIM), filtres Tous / En cours / Récupérés / Non récupérés, recherche (plaque, nom, téléphone, code), bouton **scan** : QR du ticket, code à 6 chiffres ou plaque |
 | **Enregistrer** (onglet 2) | Type (moto/vélo/voiture/autre), plaque (scan caméra + correction), propriétaire, téléphone, remarque → ticket |
-| **Ticket** | QR + code à 6 chiffres, copier, envoi WhatsApp |
-| **Fiche véhicule** | Infos, **vérification à la sortie** : ticket (QR/code) + plaque scannée comparée caractère par caractère → *Confirmer la remise* |
+| **Ticket** | QR + code à 6 chiffres, montant, **Encaisser** en espèces, copier, envoi WhatsApp |
+| **Fiche véhicule** | Infos, **vérification à la sortie** : ticket (QR/code) + plaque scannée comparée caractère par caractère → *Confirmer la remise* (le solde éventuel est encaissé avant) |
+| **Revenus** (icône portefeuille de l'écran Retrouver) | Encaissements par jour (onglets de la semaine), total du jour / de la semaine, montant restant à encaisser, histogramme des 7 jours |
 | **Centres** | Titre de l'écran → feuille : changer de centre, modifier, ajouter (autant que nécessaire) |
+
+### Tarifs
+Chaque centre définit un **tarif par type de véhicule** (moto, vélo, voiture, autre ; 0 = gratuit).
+Le prix est figé sur le véhicule au moment du dépôt (changer le tarif plus tard n'affecte pas les
+dépôts existants). Un montant « à payer » s'affiche dans la liste tant que le véhicule n'est pas
+soldé. Chaque paiement est une ligne de la table `payments` (moyen : espèces ; `wallet` est prévu).
 
 Statuts : **En cours** · **Récupéré** (date + heure) · **Non récupéré** (délai de garde du centre dépassé,
 calculé automatiquement).
@@ -74,7 +81,8 @@ test/widget_test.dart       tests de logique pure
 
 ## Base de données
 
-Tables `centers`, `vehicles`, `settings` (schéma dans `sqlite_repository.dart`).
+Tables `centers`, `vehicles`, `payments`, `settings` (schéma dans `sqlite_repository.dart`).
+Le schéma est en **version 2** : une migration ajoute les tarifs/paiements aux bases créées avec la v1 (les données existantes sont conservées).
 Identifiants en **UUID v4** générés côté appareil → compatibles PostgreSQL sans conversion.
 Dates en millisecondes epoch.
 
@@ -103,7 +111,7 @@ lots (les UUID évitent les collisions d'identifiants).
   limitation des essais, puis biométrie (cf. document de cadrage).
 - Pas de compte agent / rôles / synchronisation multi-téléphones : les données restent sur
   l'appareil (perdre le téléphone = perdre la base tant qu'il n'y a pas de sauvegarde serveur).
-- Pas de tarification ni de paiement Mobile Money (prévu après validation du flux de garde).
+- Tarifs et encaissement **en espèces** uniquement ; pas encore de portefeuille ni de Mobile Money.
 - L'OCR (ML Kit) doit être testé sur de vraies plaques béninoises : poussière, boue, angle, nuit.
   Les plaques absentes ou illisibles sont gérées (plaque facultative pour vélos/autres, saisie
   manuelle, validation par le ticket seul avec avertissement).

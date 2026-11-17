@@ -12,6 +12,7 @@ import '../widgets/buttons.dart';
 import '../widgets/feedback.dart';
 import '../widgets/fields.dart';
 import '../widgets/pills.dart';
+import '../widgets/vehicle_ui.dart';
 
 const List<int> _presets = [6, 12, 24, 48];
 
@@ -32,6 +33,9 @@ class _CenterFormPageState extends State<CenterFormPage> {
   final TextEditingController _name = TextEditingController();
   final TextEditingController _location = TextEditingController();
   final TextEditingController _custom = TextEditingController();
+  final Map<VehicleType, TextEditingController> _prices = {
+    for (final t in VehicleType.values) t: TextEditingController(),
+  };
 
   int _hours = 24;
   bool _useCustom = false;
@@ -49,6 +53,10 @@ class _CenterFormPageState extends State<CenterFormPage> {
       _hours = e.guardHours;
       _useCustom = !_presets.contains(e.guardHours);
       if (_useCustom) _custom.text = '${e.guardHours}';
+      for (final t in VehicleType.values) {
+        final price = e.tariff.forType(t);
+        if (price > 0) _prices[t]!.text = '$price';
+      }
     }
   }
 
@@ -57,10 +65,22 @@ class _CenterFormPageState extends State<CenterFormPage> {
     _name.dispose();
     _location.dispose();
     _custom.dispose();
+    for (final c in _prices.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   int get _effectiveHours => _useCustom ? (int.tryParse(_custom.text.trim()) ?? 0) : _hours;
+
+  int _priceOf(VehicleType t) => int.tryParse(_prices[t]!.text.trim()) ?? 0;
+
+  Tariff get _tariff => Tariff(
+        moto: _priceOf(VehicleType.moto),
+        velo: _priceOf(VehicleType.velo),
+        voiture: _priceOf(VehicleType.voiture),
+        autre: _priceOf(VehicleType.autre),
+      );
 
   String? _validateCustom(String? v) {
     if (!_useCustom) return null;
@@ -83,6 +103,7 @@ class _CenterFormPageState extends State<CenterFormPage> {
         name: _name.text,
         location: _location.text,
         guardHours: _effectiveHours,
+        tariff: _tariff,
       );
       if (!mounted) return;
       HapticFeedback.mediumImpact();
@@ -116,6 +137,19 @@ class _CenterFormPageState extends State<CenterFormPage> {
     if (!mounted) return;
     // S'il ne reste aucun centre, le routeur redirige vers l'écran d'accueil.
     if (c.centers.isNotEmpty) goBack(context);
+  }
+
+  Widget _priceField(VehicleType t) {
+    return AppField(
+      controller: _prices[t]!,
+      label: t.label,
+      hint: '0',
+      icon: t.icon,
+      maxLength: 6,
+      keyboardType: TextInputType.number,
+      textInputAction: TextInputAction.next,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+    );
   }
 
   @override
@@ -241,10 +275,35 @@ class _CenterFormPageState extends State<CenterFormPage> {
                             )
                           : const SizedBox(width: double.infinity),
                     ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 28, 4, 6),
+                      child: Text(
+                        'Tarifs (FCFA)',
+                        style: context.tt.labelMedium?.copyWith(color: p.goldText, fontSize: 15),
+                      ),
+                    ),
+                    Text(
+                      'Prix d\'une garde de ${Fmt.hours(_effectiveHours > 0 ? _effectiveHours : 24)}, '
+                      'selon le type de véhicule. Laissez vide pour « gratuit ».',
+                      style: context.tt.bodySmall?.copyWith(height: 1.35),
+                    ),
+                    const SizedBox(height: 14),
+                    for (var i = 0; i < VehicleType.values.length; i += 2)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            Expanded(child: _priceField(VehicleType.values[i])),
+                            const SizedBox(width: 12),
+                            Expanded(child: _priceField(VehicleType.values[i + 1])),
+                          ],
+                        ),
+                      ),
                     if (_isEdit) ...[
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 2),
                       Text(
-                        'La nouvelle durée s\'applique aux prochains dépôts. Les véhicules déjà enregistrés gardent leur échéance.',
+                        'La nouvelle durée et les nouveaux tarifs s\'appliquent aux prochains dépôts. '
+                        'Les véhicules déjà enregistrés gardent leur échéance et leur prix.',
                         style: context.tt.bodySmall?.copyWith(height: 1.35),
                       ),
                       const SizedBox(height: 28),

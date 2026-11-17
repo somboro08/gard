@@ -7,6 +7,9 @@ import '../core/plates.dart';
 import 'models.dart';
 import 'repository.dart';
 
+/// Version du schéma. v2 : tarifs par centre, prix/paiements des véhicules.
+const int _schemaVersion = 2;
+
 const List<String> _schema = [
   '''
   CREATE TABLE centers(
@@ -14,7 +17,11 @@ const List<String> _schema = [
     name TEXT NOT NULL,
     location TEXT NOT NULL DEFAULT '',
     guard_hours INTEGER NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    price_moto INTEGER NOT NULL DEFAULT 0,
+    price_velo INTEGER NOT NULL DEFAULT 0,
+    price_voiture INTEGER NOT NULL DEFAULT 0,
+    price_autre INTEGER NOT NULL DEFAULT 0
   )
   ''',
   '''
@@ -32,7 +39,9 @@ const List<String> _schema = [
     due_at INTEGER NOT NULL,
     collected_at INTEGER,
     pickup_check TEXT,
-    ticket_verified INTEGER NOT NULL DEFAULT 0
+    ticket_verified INTEGER NOT NULL DEFAULT 0,
+    price INTEGER NOT NULL DEFAULT 0,
+    paid_amount INTEGER NOT NULL DEFAULT 0
   )
   ''',
   'CREATE INDEX idx_vehicles_center_day ON vehicles(center_id, deposited_at)',
@@ -44,6 +53,22 @@ const List<String> _schema = [
     value TEXT NOT NULL
   )
   ''',
+  ..._paymentsSchema,
+];
+
+const List<String> _paymentsSchema = [
+  '''
+  CREATE TABLE payments(
+    id TEXT PRIMARY KEY,
+    vehicle_id TEXT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+    center_id TEXT NOT NULL REFERENCES centers(id) ON DELETE CASCADE,
+    amount INTEGER NOT NULL,
+    method TEXT NOT NULL,
+    paid_at INTEGER NOT NULL
+  )
+  ''',
+  'CREATE INDEX idx_payments_center_day ON payments(center_id, paid_at)',
+  'CREATE INDEX idx_payments_vehicle ON payments(vehicle_id)',
 ];
 
 class SqliteParkingRepository implements ParkingRepository {
@@ -62,11 +87,28 @@ class SqliteParkingRepository implements ParkingRepository {
     final dir = await getDatabasesPath();
     _db = await openDatabase(
       p.join(dir, 'garde.db'),
-      version: 1,
+      version: _schemaVersion,
       onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, version) async {
         for (final sql in _schema) {
           await db.execute(sql);
+        }
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        // v1 → v2 : les données existantes sont conservées (prix à 0 = gratuit).
+        if (oldVersion < 2) {
+          for (final col in ['moto', 'velo', 'voiture', 'autre']) {
+            await db.execute(
+              'ALTER TABLE centers ADD COLUMN price_$col INTEGER NOT NULL DEFAULT 0',
+            );
+          }
+          await db.execute('ALTER TABLE vehicles ADD COLUMN price INTEGER NOT NULL DEFAULT 0');
+          await db.execute(
+            'ALTER TABLE vehicles ADD COLUMN paid_amount INTEGER NOT NULL DEFAULT 0',
+          );
+          for (final sql in _paymentsSchema) {
+            await db.execute(sql);
+          }
         }
       },
     );
@@ -96,6 +138,7 @@ class SqliteParkingRepository implements ParkingRepository {
     required String name,
     required String location,
     required int guardHours,
+    required Tariff tariff,
   }) async {
     if (id == null) {
       final c = ParkingCenter(
@@ -104,13 +147,22 @@ class SqliteParkingRepository implements ParkingRepository {
         location: location,
         guardHours: guardHours,
         createdAt: DateTime.now(),
+        tariff: tariff,
       );
       await _d.insert('centers', c.toMap());
       return c;
     }
     await _d.update(
       'centers',
-      {'name': name, 'location': location, 'guard_hours': guardHours},
+      {
+        'name': name,
+        'location': location,
+        'guard_hours': guardHours,
+        'price_moto': tariff.moto,
+        'price_velo': tariff.velo,
+        'price_voiture': tariff.voiture,
+        'price_autre': tariff.autre,
+      },
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -121,6 +173,7 @@ class SqliteParkingRepository implements ParkingRepository {
   @override
   Future<void> deleteCenter(String id) async {
     await _d.transaction((txn) async {
+      await txn.delete('payments', where: 'center_id = ?', whereArgs: [id]);
       await txn.delete('vehicles', where: 'center_id = ?', whereArgs: [id]);
       await txn.delete('centers', where: 'id = ?', whereArgs: [id]);
     });
@@ -152,6 +205,7 @@ class SqliteParkingRepository implements ParkingRepository {
     required String ownerPhone,
     required String note,
     required int guardHours,
+    required int price,
     DateTime? now,
   }) async {
     final at = now ?? DateTime.now();
@@ -166,6 +220,7 @@ class SqliteParkingRepository implements ParkingRepository {
       note: note.trim(),
       depositedAt: at,
       dueAt: at.add(Duration(hours: guardHours)),
+      price: price,
     );
     await _d.insert('vehicles', v.toMap());
     return v;
@@ -182,6 +237,7 @@ class SqliteParkingRepository implements ParkingRepository {
         'owner_name': v.ownerName.trim(),
         'owner_phone': v.ownerPhone.trim(),
         'note': v.note.trim(),
+        'price': v.price,
       },
       where: 'id = ?',
       whereArgs: [v.id],
@@ -209,7 +265,10 @@ class SqliteParkingRepository implements ParkingRepository {
 
   @override
   Future<void> deleteVehicle(String id) async {
-    await _d.delete('vehicles', where: 'id = ?', whereArgs: [id]);
+    await _d.transaction((txn) async {
+      await txn.delete('payments', where: 'vehicle_id = ?', whereArgs: [id]);
+      await txn.delete('vehicles', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   @override
@@ -287,6 +346,63 @@ class SqliteParkingRepository implements ParkingRepository {
       limit: limit,
     );
     return rows.map(Vehicle.fromMap).toList();
+  }
+
+  // ───────────────────────── Paiements ─────────────────────────
+
+  @override
+  Future<Payment> addPayment({
+    required String vehicleId,
+    required String centerId,
+    required int amount,
+    required PaymentMethod method,
+    DateTime? at,
+  }) async {
+    final payment = Payment(
+      id: _newId(),
+      vehicleId: vehicleId,
+      centerId: centerId,
+      amount: amount,
+      method: method,
+      paidAt: at ?? DateTime.now(),
+    );
+    await _d.transaction((txn) async {
+      await txn.insert('payments', payment.toMap());
+      await txn.rawUpdate(
+        'UPDATE vehicles SET paid_amount = paid_amount + ? WHERE id = ?',
+        [amount, vehicleId],
+      );
+    });
+    return payment;
+  }
+
+  @override
+  Future<List<Payment>> paymentsBetween(String centerId, DateTime from, DateTime to) async {
+    final rows = await _d.rawQuery(
+      '''
+      SELECT p.*, v.plate AS plate, v.owner_name AS owner_name, v.type AS vtype
+      FROM payments p
+      JOIN vehicles v ON v.id = p.vehicle_id
+      WHERE p.center_id = ? AND p.paid_at >= ? AND p.paid_at < ?
+      ORDER BY p.paid_at DESC
+      ''',
+      [centerId, from.millisecondsSinceEpoch, to.millisecondsSinceEpoch],
+    );
+    return rows.map(Payment.fromMap).toList();
+  }
+
+  @override
+  Future<int> pendingAmount(String centerId) async {
+    final rows = await _d.rawQuery(
+      '''
+      SELECT COALESCE(SUM(price - paid_amount), 0) AS total
+      FROM vehicles
+      WHERE center_id = ? AND collected_at IS NULL AND price > paid_amount
+      ''',
+      [centerId],
+    );
+    final total = rows.first['total'];
+    return total is num ? total.toInt() : 0;
   }
 
   // ───────────────────────── Réglages ─────────────────────────

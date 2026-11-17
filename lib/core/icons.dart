@@ -38,6 +38,7 @@ abstract final class AppIcons {
   static const IconData clock = Iconsax.clock;
   static const IconData calendar = Iconsax.calendar;
   static const IconData ticket = Iconsax.ticket;
+  static const IconData wallet = Iconsax.wallet_2;
   static const IconData car = Iconsax.car;
   static const IconData emptyBox = Iconsax.box_search;
   static const IconData shield = Iconsax.shield_tick;

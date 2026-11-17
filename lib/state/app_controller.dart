@@ -71,12 +71,14 @@ class AppController extends ChangeNotifier {
     required String name,
     required String location,
     required int guardHours,
+    Tariff tariff = const Tariff(),
   }) async {
     final c = await _repo.saveCenter(
       id: id,
       name: name.trim(),
       location: location.trim(),
       guardHours: guardHours,
+      tariff: tariff,
     );
     _centers = await _repo.centers();
     if (id == null) {
@@ -123,14 +125,48 @@ class AppController extends ChangeNotifier {
       ownerPhone: ownerPhone,
       note: note,
       guardHours: center.guardHours,
+      price: center.tariff.forType(type),
     );
     _bump();
     return v;
   }
 
   Future<void> updateVehicle(Vehicle v) async {
-    await _repo.updateVehicle(v);
+    var next = v;
+    final center = centerById(v.centerId);
+    // Tant que rien n'a été encaissé, le prix suit le type de véhicule corrigé.
+    if (center != null && v.paidAmount == 0 && !v.isCollected) {
+      next = v.copyWith(price: center.tariff.forType(v.type));
+    }
+    await _repo.updateVehicle(next);
     _bump();
+  }
+
+  /// Encaisse [amount] (par défaut : tout le reste à payer) en espèces.
+  Future<void> recordPayment(Vehicle v, {int? amount}) async {
+    final due = amount ?? v.balance;
+    if (due <= 0) return;
+    await _repo.addPayment(
+      vehicleId: v.id,
+      centerId: v.centerId,
+      amount: due,
+      method: PaymentMethod.cash,
+    );
+    _bump();
+  }
+
+  /// Paiements encaissés pendant la semaine commençant à [weekStart] (lundi).
+  Future<List<Payment>> paymentsOfWeek(DateTime weekStart) {
+    final center = current;
+    if (center == null) return Future.value(const <Payment>[]);
+    return _repo.paymentsBetween(center.id, weekStart, Fmt.addDays(weekStart, 7));
+  }
+
+  /// Montant restant à encaisser sur les véhicules encore en garde.
+  Future<int> pendingAmount() {
+    final center = current;
+    if (center == null) return Future.value(0);
+    return _repo.pendingAmount(center.id);
   }
 
   Future<void> collect(Vehicle v, PickupCheck check, {required bool ticketVerified}) async {

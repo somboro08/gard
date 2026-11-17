@@ -7,6 +7,7 @@ import 'state/app_controller.dart';
 import 'ui/pages/center_form_page.dart';
 import 'ui/pages/find_page.dart';
 import 'ui/pages/register_page.dart';
+import 'ui/pages/revenue_page.dart';
 import 'ui/pages/scan_plate_page.dart';
 import 'ui/pages/scan_qr_page.dart';
 import 'ui/pages/shell_page.dart';
@@ -21,6 +22,7 @@ final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>(deb
 /// Routes :
 ///  /onboarding            premier lancement (créer le 1er centre)
 ///  /find   | /register    les 2 onglets du bas
+///  /revenue               revenus par jour / semaine
 ///  /center/new            nouveau centre            (glisse depuis la droite)
 ///  /center/:id/edit       modifier un centre
 ///  /vehicle/:id           fiche + vérification     (?t=1 : ticket déjà validé)
@@ -67,6 +69,11 @@ GoRouter buildRouter(AppController controller) {
             ],
           ),
         ],
+      ),
+      GoRoute(
+        path: '/revenue',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => slidePage(state, const RevenuePage()),
       ),
       GoRoute(
         path: '/center/new',

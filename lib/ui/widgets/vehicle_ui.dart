@@ -165,8 +165,17 @@ class VehicleTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 3),
-                  Text(
-                    statusDetail(v, now),
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(text: statusDetail(v, now)),
+                        if (!v.isCollected && v.balance > 0)
+                          TextSpan(
+                            text: ' · ${Fmt.money(v.balance)} à payer',
+                            style: TextStyle(color: p.warn, fontWeight: FontWeight.w700),
+                          ),
+                      ],
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: context.tt.bodySmall?.copyWith(

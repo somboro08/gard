@@ -62,6 +62,17 @@ abstract final class Fmt {
     return '$h h';
   }
 
+  /// 1500 → « 1 500 FCFA » (espace insécable pour ne pas couper le montant).
+  static String money(int amount) {
+    final digits = amount.abs().toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buf.write('\u00A0');
+      buf.write(digits[i]);
+    }
+    return '${amount < 0 ? '-' : ''}$buf\u00A0FCFA';
+  }
+
   /// 482913 → 482 913
   static String code(String c) =>
       c.length == 6 ? '${c.substring(0, 3)} ${c.substring(3)}' : c;

@@ -129,7 +129,63 @@ void main() {
     });
   });
 
+  group('Tarifs et paiements', () {
+    final dep = DateTime(2026, 11, 16, 8);
+    final due = DateTime(2026, 11, 17, 8);
+
+    test('Tariff.forType et isFree', () {
+      const t = Tariff(moto: 100, velo: 50, voiture: 500);
+      expect(t.forType(VehicleType.moto), 100);
+      expect(t.forType(VehicleType.autre), 0);
+      expect(t.isFree, isFalse);
+      expect(const Tariff().isFree, isTrue);
+    });
+
+    test('balance / isPaid', () {
+      final v = Vehicle(
+        id: 'v',
+        centerId: 'c',
+        code: '123456',
+        plate: 'AB 1234 RB',
+        type: VehicleType.moto,
+        ownerName: 'Georges',
+        ownerPhone: '',
+        note: '',
+        depositedAt: dep,
+        dueAt: due,
+        price: 100,
+        paidAmount: 40,
+      );
+      expect(v.balance, 60);
+      expect(v.isPaid, isFalse);
+      expect(Vehicle.fromMap(v.toMap()).paidAmount, 40);
+      expect(_vehicle(deposited: dep, due: due).isPaid, isTrue); // prix 0 = gratuit
+    });
+
+    test('ParkingCenter aller-retour avec tarifs', () {
+      final c = ParkingCenter(
+        id: 'c',
+        name: 'Parking école',
+        location: 'Cotonou',
+        guardHours: 24,
+        createdAt: dep,
+        tariff: const Tariff(moto: 100, velo: 50),
+      );
+      final back = ParkingCenter.fromMap(c.toMap());
+      expect(back.tariff.moto, 100);
+      expect(back.tariff.velo, 50);
+      expect(back.tariff.voiture, 0);
+    });
+  });
+
   group('Fmt', () {
+    test('money groupe les milliers', () {
+      expect(Fmt.money(0), '0\u00A0FCFA');
+      expect(Fmt.money(100), '100\u00A0FCFA');
+      expect(Fmt.money(1500), '1\u00A0500\u00A0FCFA');
+      expect(Fmt.money(1250000), '1\u00A0250\u00A0000\u00A0FCFA');
+    });
+
     test('startOfWeek renvoie le lundi', () {
       // 18 nov. 2026 = mercredi
       expect(Fmt.startOfWeek(DateTime(2026, 11, 18, 15, 30)), DateTime(2026, 11, 16));

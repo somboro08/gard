@@ -3,20 +3,20 @@ name: CI — Builder l'APK
 on:
   push:
     branches: [main]
-  workflow_dispatch:  # lancement manuel depuis l'onglet Actions
+  workflow_dispatch:
 
-env:
-  FLUTTER_CHANNEL: stable
+permissions:
+  contents: read
 
 jobs:
   build-apk:
-    name: Build APK debug
+    name: Analyze, test and build APK debug
     runs-on: ubuntu-latest
     steps:
       - name: Checkout du code
         uses: actions/checkout@v4
 
-      - name: Installer Java (JDK 17, requis par Flutter/Android)
+      - name: Installer Java (JDK 17)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -27,35 +27,36 @@ jobs:
         with:
           channel: stable
 
-      - name: Cache des packages pub
+      - name: Cache des packages Pub
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.pub-cache
+          path: ~/.pub-cache
           key: ${{ runner.os }}-pub-${{ hashFiles('pubspec.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pub-
 
-      # android/ n'est pas dans le dépôt : il est régénéré à chaque build.
-      # On met pubspec.yaml, lib/ et test/ à l'abri au cas où flutter create
-      # les écrase, puis on les restaure.
-      - name: Mettre pubspec/lib/test à l'abri pendant flutter create
+      # Le projet ne versionne pas android/. On génère le squelette Android
+      # sans perdre les sources GARD ni sa configuration Pub.
+      - name: Sauvegarder les sources GARD
         run: |
           mkdir -p /tmp/garde-backup
           mv pubspec.yaml /tmp/garde-backup/pubspec.yaml
           mv lib /tmp/garde-backup/lib
           mv test /tmp/garde-backup/test
 
-      - name: Générer android/ (flutter create)
+      - name: Générer le projet Android
         run: flutter create --platforms=android --project-name garde --org bj.mrl .
 
-      - name: Restaurer pubspec.yaml, lib/ et test/
+      # flutter create crée ses propres lib/ et test/. Il faut les supprimer
+      # avant de restaurer les dossiers d'origine, sinon mv les imbrique.
+      - name: Restaurer les sources GARD
         run: |
+          rm -rf lib test
           mv /tmp/garde-backup/pubspec.yaml pubspec.yaml
           mv /tmp/garde-backup/lib lib
           mv /tmp/garde-backup/test test
 
-      - name: Configurer les fichiers plateforme (caméra, minSdk 24, etc.)
+      - name: Configurer les plateformes
         run: dart run tool/setup_platforms.dart
 
       - name: Récupérer les dépendances
@@ -64,16 +65,14 @@ jobs:
       - name: Accepter les licences Android SDK
         run: yes | flutter doctor --android-licenses
 
-      - name: Analyser le code
+      - name: Analyser le code Dart
         run: flutter analyze
-        continue-on-error: true
 
       - name: Exécuter les tests
-        run: flutter test
-        continue-on-error: true
+        run: flutter test --reporter expanded
 
       - name: Construire l'APK debug
-        run: flutter build apk
+        run: flutter build apk --debug
 
       - name: Déposer l'APK en artefact
         uses: actions/upload-artifact@v4
@@ -81,4 +80,3 @@ jobs:
           name: garde-apk-debug
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 30
-          overwrite: true

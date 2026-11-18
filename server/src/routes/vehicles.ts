@@ -24,6 +24,9 @@ const createBody = z.object({
   price: money.optional(), // défaut : tarif du centre pour ce type
   guardHours: z.number().int().min(1).max(720).optional(), // défaut : durée du centre
   depositedAt: iso.optional(), // défaut : maintenant (appli hors-ligne : heure réelle du dépôt)
+  dueAt: iso.optional(), // défaut : depositedAt + guardHours (l'appli hors-ligne l'a déjà calculé)
+  // Ticket déjà remis au client hors-ligne : on garde son code s'il est libre.
+  code: z.string().regex(/^\d{6}$/, 'Code à 6 chiffres.').optional(),
 });
 const patchBody = z.object({
   plate: z.string().max(20),
@@ -85,11 +88,17 @@ export const vehicleRoutes =
         throw conflict('bad_date', 'Date de dépôt invalide.');
       }
       const hours = b.guardHours ?? center.guard_hours;
-      const due = new Date(deposited.getTime() + hours * 3600_000);
+      const due = b.dueAt ? new Date(b.dueAt) : new Date(deposited.getTime() + hours * 3600_000);
+      if (due.getTime() <= deposited.getTime() || due.getTime() - deposited.getTime() > 720 * 3600_000) {
+        throw conflict('bad_date', "Échéance invalide.");
+      }
       const price = b.price ?? center[`price_${b.type}`];
 
       for (let attempt = 0; attempt < 5; attempt++) {
-        const code = await uniqueCode(db, req.params.id);
+        // 1re tentative : le code déjà imprimé/envoyé au client ; sinon (ou en cas de
+        // collision avec un autre appareil) un nouveau code est attribué et renvoyé.
+        const wanted = attempt === 0 ? b.code : undefined;
+        const code = wanted ?? (await uniqueCode(db, req.params.id));
         try {
           const r = await db.query(
             `INSERT INTO vehicles(id, center_id, code, plate, plate_key, type, owner_name,

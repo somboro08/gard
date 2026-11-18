@@ -11,9 +11,39 @@ import 'dart:io';
 void main() {
   _patchAndroidManifest();
   _patchAndroidGradle();
+  _installAndroidResources();
   _patchIosPlist();
   _patchIosPodfile();
   stdout.writeln('\nTerminé. Lancez maintenant : flutter pub get && flutter run');
+}
+
+/// Icône de l'appli + splash natif (remplace le logo Flutter par défaut).
+/// Sources : tool/android_res (régénérables avec tool/gen_icons.py).
+void _installAndroidResources() {
+  final src = Directory('tool/android_res');
+  const destRoot = 'android/app/src/main/res';
+  if (!src.existsSync()) {
+    stdout.writeln('• ignoré (introuvable) : tool/android_res');
+    return;
+  }
+  if (!Directory(destRoot).existsSync()) {
+    stdout.writeln('• ignoré (introuvable) : $destRoot');
+    return;
+  }
+  var n = 0;
+  for (final e in src.listSync(recursive: true)) {
+    if (e is! File) continue;
+    final rel = e.path.substring(src.path.length + 1);
+    final out = File('$destRoot/$rel');
+    out.parent.createSync(recursive: true);
+    out.writeAsBytesSync(e.readAsBytesSync());
+    n++;
+  }
+  // Le modèle Flutter peut aussi fournir mipmap-*/ic_launcher.webp : il masquerait nos PNG.
+  for (final f in Directory(destRoot).listSync(recursive: true)) {
+    if (f is File && RegExp(r'ic_launcher(_round)?\.webp$').hasMatch(f.path)) f.deleteSync();
+  }
+  stdout.writeln('✓ icône et splash installés ($n fichiers) dans $destRoot');
 }
 
 String? _read(String path) {

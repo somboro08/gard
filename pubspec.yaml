@@ -29,6 +29,11 @@ dependencies:
   qr_flutter: ^4.1.0
   url_launcher: ^6.3.0
 
+  # Synchronisation avec l'API (voir server/) : HTTP, état du réseau, jetons chiffrés
+  http: ^1.2.2
+  connectivity_plus: ^6.1.0
+  flutter_secure_storage: ^9.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

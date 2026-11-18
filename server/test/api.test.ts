@@ -175,6 +175,28 @@ describe('véhicules', () => {
     assert.equal(old.status, 409);
   });
 
+  it("garde le code et l'échéance fournis par l'appli hors-ligne, sinon réattribue", async () => {
+    const u = await signup(call);
+    const c = await newCenter(u.token);
+    const dep = new Date(Date.now() - 2 * 3600_000);
+    const due = new Date(dep.getTime() + 5 * 3600_000);
+    const a = await call('POST', `/centers/${c.id}/vehicles`, u.token, {
+      type: 'moto', ownerName: 'A', code: '123456', depositedAt: iso(dep), dueAt: iso(due),
+    });
+    assert.equal(a.status, 201);
+    assert.equal(a.body.vehicle.code, '123456');
+    assert.equal(Date.parse(a.body.vehicle.dueAt), due.getTime());
+    // Même code demandé par un autre appareil (autre véhicule) : réattribué.
+    const b = await call('POST', `/centers/${c.id}/vehicles`, u.token, { type: 'moto', ownerName: 'B', code: '123456' });
+    assert.equal(b.status, 201);
+    assert.notEqual(b.body.vehicle.code, '123456');
+    // Échéance antérieure au dépôt : refusée.
+    const bad = await call('POST', `/centers/${c.id}/vehicles`, u.token, {
+      type: 'moto', ownerName: 'C', depositedAt: iso(dep), dueAt: iso(new Date(dep.getTime() - 1000)),
+    });
+    assert.equal(bad.status, 409);
+  });
+
   it('génère des codes uniques parmi les véhicules en garde', async () => {
     const u = await signup(call);
     const c = await newCenter(u.token);

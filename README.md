@@ -117,6 +117,10 @@ lots (les UUID évitent les collisions d'identifiants).
   manuelle, validation par le ticket seul avec avertissement).
 - Orientation portrait uniquement.
 
+## API serveur (PostgreSQL)
+Le dossier [`server/`](server/README.md) contient l'API (comptes, agents par centre, synchronisation).
+L'appli utilise encore SQLite en local ; le client `ApiParkingRepository` est l'étape suivante.
+
 ## Build de l'APK avec GitHub Actions
 
 Ce dépôt ne commite pas les dossiers `android/` et `ios/` : ils sont régénérés à chaque build par `flutter create`.

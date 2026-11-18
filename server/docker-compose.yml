@@ -1,0 +1,24 @@
+# Démarrage local : docker compose up --build   →  API sur http://localhost:3000/health
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: garde
+      POSTGRES_PASSWORD: garde
+      POSTGRES_DB: garde
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U garde"]
+      interval: 5s
+      retries: 10
+  api:
+    build: .
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://garde:garde@db:5432/garde
+      JWT_SECRET: ${JWT_SECRET:?définir JWT_SECRET (32 caractères minimum)}
+      NODE_ENV: production
+    ports: ["3000:3000"]
+volumes:
+  pgdata:

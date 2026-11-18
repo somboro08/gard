@@ -1,0 +1,46 @@
+name: CI — API (server)
+
+on:
+  push:
+    branches: [main]
+    paths: ['server/**', '.github/workflows/server.yml']
+  pull_request:
+    paths: ['server/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: Typecheck, build et tests (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: garde
+          POSTGRES_PASSWORD: garde
+          POSTGRES_DB: garde_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U garde" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: server
+    env:
+      DATABASE_URL: postgres://garde:garde@localhost:5432/garde_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - name: Vulnérabilités (dépendances de production)
+        run: npm audit --omit=dev --audit-level=high

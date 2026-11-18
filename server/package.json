@@ -1,0 +1,32 @@
+{
+  "name": "garde-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "API Garde (Fastify + PostgreSQL)",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "migrate": "tsx src/migrate-cli.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.1.0",
+    "@fastify/jwt": "^10.2.8",
+    "@fastify/rate-limit": "^10.3.0",
+    "fastify": "^5.12.8",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

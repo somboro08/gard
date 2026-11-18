@@ -64,18 +64,17 @@ class _Branch extends StatelessWidget {
       excluding: !active,
       child: IgnorePointer(
         ignoring: !active,
-        child: TickerMode(
-          enabled: active,
-          child: AnimatedSlide(
-            offset: active ? Offset.zero : Offset(0.06 * side, 0),
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeOutCubic,
-            child: AnimatedOpacity(
-              opacity: active ? 1 : 0,
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOut,
-              child: child,
-            ),
+        // Pas de TickerMode ici : il gèlerait le fondu de l'onglet quitté
+        // (opacité bloquée à 1) et il resterait affiché par-dessus l'autre.
+        child: AnimatedSlide(
+          offset: active ? Offset.zero : Offset(0.06 * side, 0),
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          child: AnimatedOpacity(
+            opacity: active ? 1 : 0,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            child: child,
           ),
         ),
       ),

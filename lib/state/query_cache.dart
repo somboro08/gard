@@ -29,6 +29,9 @@ class Loadable<T> {
 
 /// Une requête en cache : dernière valeur, fraîcheur, dédoublonnage des appels en cours.
 class QueryEntry<T> extends ChangeNotifier {
+  /// Vrai tant qu'un widget observe cette entrée (jamais évincée dans ce cas).
+  bool get isWatched => hasListeners;
+
   QueryEntry(this.key, this._cache, this._fetch, this.tags);
 
   final String key;
@@ -150,7 +153,7 @@ class QueryCache {
     final victims = <String>[];
     for (final e in _entries.entries) {
       if (_entries.length - victims.length <= maxEntries) break;
-      if (!e.value.hasListeners) victims.add(e.key); // jamais une entrée affichée
+      if (!e.value.isWatched) victims.add(e.key); // jamais une entrée affichée
     }
     for (final k in victims) {
       _entries.remove(k)?.dispose();

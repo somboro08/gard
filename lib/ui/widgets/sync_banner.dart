@@ -75,7 +75,7 @@ class _SyncBannerState extends State<SyncBanner> {
 
   Widget? _content(BuildContext context, SyncStatus st) {
     final p = context.pal;
-    final open = () => context.push('/account');
+    void open() => context.push('/account');
 
     String plural(int n, String one, String many) => '$n ${n > 1 ? many : one}';
 

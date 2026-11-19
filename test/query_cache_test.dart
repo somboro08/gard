@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_test/flutter_test.dart' hide Tags;
 import 'package:garde/state/query_cache.dart';
 
 void main() {

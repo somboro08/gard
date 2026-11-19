@@ -79,6 +79,36 @@ test/widget_test.dart       tests de logique pure
 - **Icônes** : Iconsax, centralisées dans `lib/core/icons.dart` (les types de véhicule moto/vélo
   utilisent les icônes Material car Iconsax n'a pas de moto).
 
+## Hors-ligne, compte et synchronisation
+
+- **SQLite reste la source de vérité de l'écran** : tout fonctionne sans réseau.
+- Compte **facultatif** (Réglages › Compte et synchronisation). Une fois connecté, chaque
+  écriture locale est aussi placée dans une file d'envoi (`outbox`) dans la même transaction,
+  puis rejouée dans l'ordre vers l'API ; les changements des autres appareils sont récupérés via
+  `/centers/:id/changes`.
+- Déclencheurs : démarrage, connexion, retour du réseau, retour dans l'app, après une écriture,
+  toutes les 45 s, bouton « Réessayer » / tirer pour rafraîchir.
+- Une **bannière** au-dessus de la navigation montre l'état : hors-ligne, synchronisation avec
+  barre de progression, erreur, opérations refusées (à réessayer ou ignorer), « Tout est synchronisé ».
+- Erreurs réseau : arrêt du cycle + sondes de reconnexion ; erreurs serveur : nouvel essai avec
+  délai croissant ; refus définitif : l'opération est marquée « échouée » et l'état local corrigé ;
+  session expirée : synchro en pause, données conservées.
+- Se déconnecter efface les données locales (téléphone partagé).
+- Adresse du serveur : `--dart-define=API_URL=https://…` au build, ou Compte › Serveur dans l'app.
+
+### Cache et états
+
+`QueryCache` (lib/state/query_cache.dart) : valeur gardée en mémoire (30 s), appels simultanés
+dédoublonnés, ancienne valeur affichée pendant le rechargement, invalidation par étiquettes
+(`Tags.vehicles(centre)`, `Tags.payments(centre)`, `Tags.vehicle(id)`) déclenchée par chaque
+écriture locale ou synchro. `QueryBuilder` l'utilise dans les écrans. Les erreurs non gérées
+sont consignées (Compte › Diagnostic).
+
+### Icône et écran de démarrage
+
+Générés par `python3 tool/gen_icons.py` ; `dart run tool/setup_platforms.dart` les installe dans
+`android/` (le CI le fait à chaque build).
+
 ## Base de données
 
 Tables `centers`, `vehicles`, `payments`, `settings` (schéma dans `sqlite_repository.dart`).

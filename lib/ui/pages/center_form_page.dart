@@ -194,7 +194,22 @@ class _CenterFormPageState extends State<CenterFormPage> {
                         textAlign: TextAlign.center,
                         style: context.tt.bodyMedium?.copyWith(color: p.textSoft, height: 1.4),
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 6),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () => context.push('/account'),
+                          icon: Icon(AppIcons.account, color: p.goldText),
+                          label: Text(
+                            'J\'ai déjà un compte · Se connecter',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: p.goldText,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
                     ],
                     AppField(
                       controller: _name,

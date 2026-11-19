@@ -40,6 +40,16 @@ class ApiClient {
 
   Future<Object?> delete(String path) => send('DELETE', path);
 
+  /// Le serveur répond-il ? (sert à détecter le retour de la connexion)
+  Future<bool> ping() async {
+    try {
+      await _once('GET', '/health', auth: false);
+      return true;
+    } on ApiException {
+      return false;
+    }
+  }
+
   Future<Object?> send(
     String method,
     String path, {

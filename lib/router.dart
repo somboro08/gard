@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'core/icons.dart';
 import 'data/models.dart';
 import 'state/app_controller.dart';
+import 'ui/pages/account_page.dart';
 import 'ui/pages/center_form_page.dart';
 import 'ui/pages/find_page.dart';
 import 'ui/pages/register_page.dart';
@@ -23,6 +24,7 @@ final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>(deb
 ///  /onboarding            premier lancement (créer le 1er centre)
 ///  /find   | /register    les 2 onglets du bas
 ///  /revenue               revenus par jour / semaine
+///  /account               compte et synchronisation
 ///  /center/new            nouveau centre            (glisse depuis la droite)
 ///  /center/:id/edit       modifier un centre
 ///  /vehicle/:id           fiche + vérification     (?t=1 : ticket déjà validé)
@@ -37,7 +39,8 @@ GoRouter buildRouter(AppController controller) {
     redirect: (context, state) {
       final location = state.matchedLocation;
       if (controller.centers.isEmpty) {
-        return location == '/onboarding' ? null : '/onboarding';
+        // Sans centre : accueil, ou écran Compte (se connecter pour retrouver ses centres).
+        return (location == '/onboarding' || location == '/account') ? null : '/onboarding';
       }
       if (location == '/onboarding') return '/find';
       return null;
@@ -69,6 +72,11 @@ GoRouter buildRouter(AppController controller) {
             ],
           ),
         ],
+      ),
+      GoRoute(
+        path: '/account',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => slidePage(state, const AccountPage()),
       ),
       GoRoute(
         path: '/revenue',

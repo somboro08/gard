@@ -20,6 +20,7 @@ class AppField extends StatelessWidget {
     this.maxLength,
     this.maxLines = 1,
     this.autofocus = false,
+    this.obscureText = false,
     this.big = false,
     this.onChanged,
     this.onSubmitted,
@@ -38,6 +39,7 @@ class AppField extends StatelessWidget {
   final int? maxLength;
   final int maxLines;
   final bool autofocus;
+  final bool obscureText;
 
   /// Grande police (plaque, code).
   final bool big;
@@ -62,6 +64,7 @@ class AppField extends StatelessWidget {
       maxLength: maxLength,
       maxLines: maxLines,
       autofocus: autofocus,
+      obscureText: obscureText,
       onChanged: onChanged,
       onFieldSubmitted: onSubmitted,
       cursorColor: p.gold,

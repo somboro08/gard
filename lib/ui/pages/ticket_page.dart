@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/error_reporter.dart';
 import '../../core/format.dart';
 import '../../core/icons.dart';
 import '../../core/plates.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../state/app_controller.dart';
+import '../../state/query_cache.dart';
 import '../widgets/bars.dart';
 import '../widgets/buttons.dart';
 import '../widgets/empty_state.dart';
@@ -33,10 +35,20 @@ class _TicketPageState extends State<TicketPage> {
   static const _ink = Color(0xFF111111);
   static const _inkSoft = Color(0xFF667781);
 
+  VoidCallback? _stopListening;
+
   @override
   void initState() {
     super.initState();
     _load();
+    _stopListening =
+        AppScope.read(context).cache.listenTag(Tags.vehicle(widget.id), _load);
+  }
+
+  @override
+  void dispose() {
+    _stopListening?.call();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -61,7 +73,13 @@ class _TicketPageState extends State<TicketPage> {
       confirmLabel: 'Encaissé',
     );
     if (!ok || !mounted) return;
-    await AppScope.read(context).recordPayment(v);
+    try {
+      await AppScope.read(context).recordPayment(v);
+    } catch (e, st) {
+      ErrorReporter.report(e, st, where: 'encaissement');
+      if (mounted) showToast(context, 'Encaissement impossible. Réessayez.', error: true);
+      return;
+    }
     HapticFeedback.mediumImpact();
     if (!mounted) return;
     await _load();

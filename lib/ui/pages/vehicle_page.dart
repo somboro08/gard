@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/error_reporter.dart';
 import '../../core/format.dart';
 import '../../core/icons.dart';
 import '../../core/plates.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../state/app_controller.dart';
+import '../../state/query_cache.dart';
 import '../flows.dart';
 import '../widgets/bars.dart';
 import '../widgets/buttons.dart';
@@ -37,12 +39,22 @@ class _VehiclePageState extends State<VehiclePage> {
   String? _scannedPlate;
   PlateMatch? _match;
   bool _busy = false;
+  VoidCallback? _stopListening;
 
   @override
   void initState() {
     super.initState();
     _ticketOk = widget.ticketVerified;
     _load();
+    // Modifié ailleurs (synchro avec un autre téléphone) : la fiche se met à jour toute seule.
+    _stopListening =
+        AppScope.read(context).cache.listenTag(Tags.vehicle(widget.id), _load);
+  }
+
+  @override
+  void dispose() {
+    _stopListening?.call();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -175,7 +187,13 @@ class _VehiclePageState extends State<VehiclePage> {
       confirmLabel: 'Encaissé',
     );
     if (!ok || !mounted) return;
-    await AppScope.read(context).recordPayment(v);
+    try {
+      await AppScope.read(context).recordPayment(v);
+    } catch (e, st) {
+      ErrorReporter.report(e, st, where: 'encaissement');
+      if (mounted) showToast(context, 'Encaissement impossible. Réessayez.', error: true);
+      return;
+    }
     HapticFeedback.mediumImpact();
     if (!mounted) return;
     await _load();
@@ -258,11 +276,13 @@ class _VehiclePageState extends State<VehiclePage> {
           height: 52,
           child: Text('Modifier', style: context.tt.bodyLarge),
         ),
-        PopupMenuItem<String>(
-          value: 'delete',
-          height: 52,
-          child: Text('Supprimer', style: context.tt.bodyLarge?.copyWith(color: p.danger)),
-        ),
+        // Sur un centre synchronisé, seul le propriétaire supprime (preuve de remise / paiements).
+        if (AppScope.read(context).canManage(v.centerId))
+          PopupMenuItem<String>(
+            value: 'delete',
+            height: 52,
+            child: Text('Supprimer', style: context.tt.bodyLarge?.copyWith(color: p.danger)),
+          ),
       ],
     );
   }

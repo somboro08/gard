@@ -16,13 +16,28 @@ class GardeApp extends StatefulWidget {
   State<GardeApp> createState() => _GardeAppState();
 }
 
-class _GardeAppState extends State<GardeApp> {
+class _GardeAppState extends State<GardeApp> with WidgetsBindingObserver {
   late final GoRouter _router = buildRouter(widget.controller);
   final ThemeData _light = buildTheme(Brightness.light);
   final ThemeData _dark = buildTheme(Brightness.dark);
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Retour au premier plan : on récupère ce que les autres appareils ont fait.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      widget.controller.sync?.requestSync(immediate: true);
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _router.dispose();
     super.dispose();
   }

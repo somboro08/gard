@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/icons.dart';
+import '../widgets/sync_banner.dart';
 
 /// Coquille de l'app : 2 onglets (Retrouver / Enregistrer) avec transition fluide.
 class ShellPage extends StatelessWidget {
@@ -15,7 +16,13 @@ class ShellPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     return Scaffold(
-      body: _BranchStack(index: shell.currentIndex, children: children),
+      body: Column(
+        children: [
+          Expanded(child: _BranchStack(index: shell.currentIndex, children: children)),
+          // État de la synchro (hors-ligne, envoi en cours, erreur) juste au-dessus de la navigation.
+          const SyncBanner(),
+        ],
+      ),
       bottomNavigationBar: keyboardOpen
           ? null
           : NavigationBar(

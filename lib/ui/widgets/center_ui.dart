@@ -6,6 +6,7 @@ import '../../core/icons.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../state/app_controller.dart';
+import '../../sync/sync_service.dart';
 import 'action_tile.dart';
 import 'feedback.dart';
 
@@ -166,6 +167,18 @@ class _CenterSheet extends StatelessWidget {
   }
 }
 
+String _accountSubtitle(AppController c) {
+  final s = c.session;
+  if (s == null || !s.signedIn) return 'Facultatif · sauvegarde et partage entre appareils';
+  if (s.expired) return 'Session expirée · reconnectez-vous';
+  return switch (c.sync?.status.phase) {
+    SyncPhase.syncing => 'Synchronisation en cours…',
+    SyncPhase.offline => 'Hors-ligne',
+    SyncPhase.error => 'Erreur de synchronisation',
+    _ => s.user?.name ?? 'Connecté',
+  };
+}
+
 /// Feuille de réglages : thème clair / sombre / auto.
 Future<void> showSettingsSheet(BuildContext context) {
   return showAppSheet<void>(context: context, builder: (ctx) => const _SettingsSheet());
@@ -215,11 +228,22 @@ class _SettingsSheet extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
+          ActionTile(
+            icon: AppIcons.account,
+            title: 'Compte et synchronisation',
+            subtitle: _accountSubtitle(c),
+            onTap: () {
+              Navigator.pop(context);
+              context.push('/account');
+            },
+          ),
+          const SizedBox(height: 10),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Text(
-              'Garde · MVP 1.0\nLes données sont stockées sur cet appareil (SQLite).',
+              'Garde · 1.0\nHors-ligne d\'abord : les données sont enregistrées sur cet appareil (SQLite) '
+              'et synchronisées avec votre compte quand Internet est disponible.',
               style: context.tt.bodySmall?.copyWith(height: 1.4),
             ),
           ),

@@ -48,6 +48,16 @@ abstract final class AppIcons {
   static const IconData warning = Iconsax.warning_2;
   static const IconData info = Iconsax.info_circle;
 
+  // Synchronisation (icônes Material : valeurs sûres quelle que soit la version d'Iconsax)
+  static const IconData sync = Icons.sync_rounded;
+  static const IconData cloudOff = Icons.cloud_off_rounded;
+  static const IconData cloudDone = Icons.cloud_done_rounded;
+  static const IconData logout = Icons.logout_rounded;
+  static const IconData lock = Icons.lock_outline_rounded;
+  static const IconData eye = Icons.visibility_outlined;
+  static const IconData eyeOff = Icons.visibility_off_outlined;
+  static const IconData account = Icons.account_circle_outlined;
+
   // Lampe / thème
   static const IconData flashOn = Iconsax.flash_1;
   static const IconData flashOff = Iconsax.flash_slash;

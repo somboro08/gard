@@ -4,13 +4,30 @@ import '../core/format.dart';
 import '../core/plates.dart';
 import '../data/models.dart';
 import '../data/repository.dart';
+import '../data/sync_store.dart';
+import '../net/api_config.dart';
+import '../sync/session.dart';
+import '../sync/sync_service.dart';
+import 'query_cache.dart';
 
 /// État global : centres, centre courant, thème. Toute modification de données
 /// incrémente [revision] pour que les écrans rechargent leurs listes.
 class AppController extends ChangeNotifier {
-  AppController(this._repo);
+  AppController(this._repo, {QueryCache? cache}) : cache = cache ?? QueryCache();
 
   final ParkingRepository _repo;
+
+  /// Cache des listes affichées (invalidé à chaque modification locale ou synchro).
+  final QueryCache cache;
+
+  /// Branchés par main.dart (absents en mode « tout local » / dans les tests).
+  SyncService? sync;
+  SyncStore? syncStore;
+  SessionController? session;
+  ApiConfig? apiConfig;
+
+  /// Rôle de l'utilisateur dans chaque centre synchronisé (« owner » / « agent »).
+  Map<String, String> _roles = const {};
 
   List<ParkingCenter> _centers = const [];
   String? _currentId;
@@ -35,6 +52,28 @@ class AppController extends ChangeNotifier {
     return null;
   }
 
+  /// Un agent (non propriétaire) ne peut pas supprimer de véhicule ni modifier un centre synchronisé.
+  /// En mode local ou sans information de rôle : tout est permis.
+  bool canManage(String centerId) {
+    final r = _roles[centerId];
+    return r == null || r == 'owner';
+  }
+
+  Future<void> _loadRoles() async {
+    final store = syncStore;
+    if (store == null) return;
+    final map = <String, String>{};
+    for (final c in _centers) {
+      final r = await store.syncValue('role:${c.id}');
+      if (r != null) map[c.id] = r;
+    }
+    _roles = map;
+  }
+
+  Future<String?> getSetting(String key) => _repo.getSetting(key);
+
+  Future<void> saveSetting(String key, String value) => _repo.setSetting(key, value);
+
   Future<void> init() async {
     await _repo.init();
     _centers = await _repo.centers();
@@ -45,6 +84,51 @@ class AppController extends ChangeNotifier {
       'dark' => ThemeMode.dark,
       _ => ThemeMode.system,
     };
+  }
+
+  /// Après l'initialisation de la synchro : rôles par centre.
+  Future<void> loadRoles() async {
+    await _loadRoles();
+    notifyListeners();
+  }
+
+  /// Invalide les listes touchées par une modification, puis demande une synchro.
+  void _touch(String? centerId, {Iterable<String> vehicleIds = const []}) {
+    final tags = <String>{
+      if (centerId != null) ...[Tags.vehicles(centerId), Tags.payments(centerId)],
+      for (final id in vehicleIds) Tags.vehicle(id),
+    };
+    cache.invalidate(tags);
+    sync?.requestSync();
+  }
+
+  /// La synchro a modifié la base locale : on recharge les centres et on invalide ce qui a changé.
+  Future<void> onSyncChange(SyncChange change) async {
+    if (change.centers || change.centerIds.isNotEmpty) {
+      _centers = await _repo.centers();
+      if (_currentId != null && !_centers.any((c) => c.id == _currentId)) {
+        _currentId = _centers.isEmpty ? null : _centers.first.id;
+      }
+      await _loadRoles();
+    }
+    final tags = <String>{
+      for (final c in {...change.centerIds, ..._centers.map((c) => c.id)}) ...[
+        Tags.vehicles(c),
+        Tags.payments(c),
+      ],
+      for (final v in change.vehicleIds) Tags.vehicle(v),
+    };
+    cache.invalidate(tags);
+    _bump();
+  }
+
+  /// Données locales effacées (déconnexion, changement de compte) : on repart de zéro.
+  Future<void> onLocalDataReset() async {
+    cache.clear();
+    _centers = await _repo.centers();
+    _currentId = null;
+    _roles = const {};
+    _bump();
   }
 
   void _bump() {
@@ -85,12 +169,14 @@ class AppController extends ChangeNotifier {
       _currentId = c.id;
       await _repo.setSetting('current_center', c.id);
     }
+    _touch(c.id);
     _bump();
     return c;
   }
 
   Future<void> removeCenter(String id) async {
     await _repo.deleteCenter(id);
+    _touch(id);
     _centers = await _repo.centers();
     if (_currentId == id) {
       _currentId = _centers.isEmpty ? null : _centers.first.id;
@@ -127,6 +213,7 @@ class AppController extends ChangeNotifier {
       guardHours: center.guardHours,
       price: center.tariff.forType(type),
     );
+    _touch(center.id, vehicleIds: [v.id]);
     _bump();
     return v;
   }
@@ -139,6 +226,7 @@ class AppController extends ChangeNotifier {
       next = v.copyWith(price: center.tariff.forType(v.type));
     }
     await _repo.updateVehicle(next);
+    _touch(v.centerId, vehicleIds: [v.id]);
     _bump();
   }
 
@@ -152,6 +240,7 @@ class AppController extends ChangeNotifier {
       amount: due,
       method: PaymentMethod.cash,
     );
+    _touch(v.centerId, vehicleIds: [v.id]);
     _bump();
   }
 
@@ -176,11 +265,14 @@ class AppController extends ChangeNotifier {
       check: check,
       ticketVerified: ticketVerified,
     );
+    _touch(v.centerId, vehicleIds: [v.id]);
     _bump();
   }
 
   Future<void> deleteVehicle(String id) async {
+    final centerId = (await _repo.vehicleById(id))?.centerId;
     await _repo.deleteVehicle(id);
+    _touch(centerId, vehicleIds: [id]);
     _bump();
   }
 

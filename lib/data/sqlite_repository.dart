@@ -6,9 +6,11 @@ import 'package:sqflite/sqflite.dart';
 import '../core/plates.dart';
 import 'models.dart';
 import 'repository.dart';
+import 'sync_store.dart';
 
 /// Version du schéma. v2 : tarifs par centre, prix/paiements des véhicules.
-const int _schemaVersion = 2;
+/// v3 : file d'envoi (outbox) et état de synchronisation avec l'API.
+const int _schemaVersion = 3;
 
 const List<String> _schema = [
   '''
@@ -54,6 +56,30 @@ const List<String> _schema = [
   )
   ''',
   ..._paymentsSchema,
+  ..._syncSchema,
+];
+
+const List<String> _syncSchema = [
+  '''
+  CREATE TABLE outbox(
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    center_id TEXT,
+    payload TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    status TEXT NOT NULL DEFAULT 'pending'
+  )
+  ''',
+  'CREATE INDEX idx_outbox_entity ON outbox(entity_id)',
+  '''
+  CREATE TABLE sync_state(
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )
+  ''',
 ];
 
 const List<String> _paymentsSchema = [
@@ -110,9 +136,23 @@ class SqliteParkingRepository implements ParkingRepository {
             await db.execute(sql);
           }
         }
+        // v2 → v3 : synchronisation (aucune donnée existante n'est modifiée).
+        if (oldVersion < 3) {
+          for (final sql in _syncSchema) {
+            await db.execute(sql);
+          }
+        }
       },
     );
+    syncEnabled = (await getSetting('sync_enabled')) == '1';
   }
+
+  /// Base brute, pour [SqliteSyncStore].
+  Database get database => _d;
+
+  /// Quand c'est vrai (compte connecté), chaque modification est aussi mise en file
+  /// d'envoi, dans la même transaction.
+  bool syncEnabled = false;
 
   /// UUID v4 (compatible avec une future base PostgreSQL).
   String _newId() {
@@ -149,30 +189,56 @@ class SqliteParkingRepository implements ParkingRepository {
         createdAt: DateTime.now(),
         tariff: tariff,
       );
-      await _d.insert('centers', c.toMap());
+      await _d.transaction((txn) async {
+        await txn.insert('centers', c.toMap());
+        if (syncEnabled) {
+          await enqueueOp(txn,
+              kind: 'center.create', entityId: c.id, centerId: c.id, payload: centerPayload(c));
+        }
+      });
       return c;
     }
-    await _d.update(
-      'centers',
-      {
-        'name': name,
-        'location': location,
-        'guard_hours': guardHours,
-        'price_moto': tariff.moto,
-        'price_velo': tariff.velo,
-        'price_voiture': tariff.voiture,
-        'price_autre': tariff.autre,
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    final rows = await _d.query('centers', where: 'id = ?', whereArgs: [id], limit: 1);
-    return ParkingCenter.fromMap(rows.first);
+    late ParkingCenter saved;
+    await _d.transaction((txn) async {
+      await txn.update(
+        'centers',
+        {
+          'name': name,
+          'location': location,
+          'guard_hours': guardHours,
+          'price_moto': tariff.moto,
+          'price_velo': tariff.velo,
+          'price_voiture': tariff.voiture,
+          'price_autre': tariff.autre,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      final rows = await txn.query('centers', where: 'id = ?', whereArgs: [id], limit: 1);
+      saved = ParkingCenter.fromMap(rows.first);
+      if (syncEnabled) {
+        await enqueueOp(txn,
+            kind: 'center.update', entityId: id, centerId: id, payload: centerPayload(saved));
+      }
+    });
+    return saved;
   }
 
   @override
   Future<void> deleteCenter(String id) async {
     await _d.transaction((txn) async {
+      if (syncEnabled) {
+        // Un centre jamais envoyé au serveur n'a rien à y supprimer : on oublie tout.
+        final neverSent = Sqflite.firstIntValue(await txn.rawQuery(
+              "SELECT COUNT(*) FROM outbox WHERE kind = 'center.create' AND entity_id = ?",
+              [id],
+            )) ??
+            0;
+        await txn.delete('outbox', where: 'center_id = ?', whereArgs: [id]);
+        if (neverSent == 0) {
+          await enqueueOp(txn, kind: 'center.delete', entityId: id, centerId: id, payload: const {});
+        }
+      }
       await txn.delete('payments', where: 'center_id = ?', whereArgs: [id]);
       await txn.delete('vehicles', where: 'center_id = ?', whereArgs: [id]);
       await txn.delete('centers', where: 'id = ?', whereArgs: [id]);
@@ -222,26 +288,50 @@ class SqliteParkingRepository implements ParkingRepository {
       dueAt: at.add(Duration(hours: guardHours)),
       price: price,
     );
-    await _d.insert('vehicles', v.toMap());
+    await _d.transaction((txn) async {
+      await txn.insert('vehicles', v.toMap());
+      if (syncEnabled) {
+        await enqueueOp(txn,
+            kind: 'vehicle.create',
+            entityId: v.id,
+            centerId: centerId,
+            payload: vehicleCreatePayload(v));
+      }
+    });
     return v;
   }
 
   @override
   Future<void> updateVehicle(Vehicle v) async {
-    await _d.update(
-      'vehicles',
-      {
-        'plate': Plates.display(v.plate),
-        'plate_key': Plates.key(v.plate),
-        'type': v.type.name,
-        'owner_name': v.ownerName.trim(),
-        'owner_phone': v.ownerPhone.trim(),
-        'note': v.note.trim(),
-        'price': v.price,
-      },
-      where: 'id = ?',
-      whereArgs: [v.id],
+    final clean = v.copyWith(
+      plate: Plates.display(v.plate),
+      ownerName: v.ownerName.trim(),
+      ownerPhone: v.ownerPhone.trim(),
+      note: v.note.trim(),
     );
+    await _d.transaction((txn) async {
+      await txn.update(
+        'vehicles',
+        {
+          'plate': clean.plate,
+          'plate_key': Plates.key(clean.plate),
+          'type': clean.type.name,
+          'owner_name': clean.ownerName,
+          'owner_phone': clean.ownerPhone,
+          'note': clean.note,
+          'price': clean.price,
+        },
+        where: 'id = ?',
+        whereArgs: [v.id],
+      );
+      if (syncEnabled) {
+        await enqueueOp(txn,
+            kind: 'vehicle.update',
+            entityId: v.id,
+            centerId: v.centerId,
+            payload: vehicleUpdatePayload(clean));
+      }
+    });
   }
 
   @override
@@ -251,21 +341,47 @@ class SqliteParkingRepository implements ParkingRepository {
     required PickupCheck check,
     required bool ticketVerified,
   }) async {
-    await _d.update(
-      'vehicles',
-      {
-        'collected_at': at.millisecondsSinceEpoch,
-        'pickup_check': check.name,
-        'ticket_verified': ticketVerified ? 1 : 0,
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await _d.transaction((txn) async {
+      await txn.update(
+        'vehicles',
+        {
+          'collected_at': at.millisecondsSinceEpoch,
+          'pickup_check': check.name,
+          'ticket_verified': ticketVerified ? 1 : 0,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      if (syncEnabled) {
+        final rows = await txn.query('vehicles', columns: ['center_id'], where: 'id = ?', whereArgs: [id], limit: 1);
+        await enqueueOp(txn,
+            kind: 'vehicle.collect',
+            entityId: id,
+            centerId: rows.isEmpty ? null : rows.first['center_id'] as String?,
+            payload: collectPayload(at: at, check: check, ticketVerified: ticketVerified));
+      }
+    });
   }
 
   @override
   Future<void> deleteVehicle(String id) async {
     await _d.transaction((txn) async {
+      if (syncEnabled) {
+        final rows = await txn.query('vehicles', columns: ['center_id'], where: 'id = ?', whereArgs: [id], limit: 1);
+        final neverSent = Sqflite.firstIntValue(await txn.rawQuery(
+              "SELECT COUNT(*) FROM outbox WHERE kind = 'vehicle.create' AND entity_id = ?",
+              [id],
+            )) ??
+            0;
+        await txn.delete('outbox', where: 'entity_id = ?', whereArgs: [id]);
+        if (neverSent == 0 && rows.isNotEmpty) {
+          await enqueueOp(txn,
+              kind: 'vehicle.delete',
+              entityId: id,
+              centerId: rows.first['center_id'] as String?,
+              payload: const {});
+        }
+      }
       await txn.delete('payments', where: 'vehicle_id = ?', whereArgs: [id]);
       await txn.delete('vehicles', where: 'id = ?', whereArgs: [id]);
     });
@@ -372,6 +488,13 @@ class SqliteParkingRepository implements ParkingRepository {
         'UPDATE vehicles SET paid_amount = paid_amount + ? WHERE id = ?',
         [amount, vehicleId],
       );
+      if (syncEnabled) {
+        await enqueueOp(txn,
+            kind: 'payment.add',
+            entityId: vehicleId,
+            centerId: centerId,
+            payload: paymentPayload(payment));
+      }
     });
     return payment;
   }

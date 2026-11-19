@@ -9,11 +9,14 @@ import '../../core/icons.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../state/app_controller.dart';
+import '../../state/query_cache.dart';
+import '../../sync/sync_service.dart';
 import '../flows.dart';
 import '../widgets/center_ui.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/fluid.dart';
 import '../widgets/pills.dart';
+import '../widgets/query_builder.dart';
 import '../widgets/vehicle_ui.dart';
 import '../widgets/week_widgets.dart';
 
@@ -46,9 +49,7 @@ class _FindPageState extends State<FindPage> with SingleTickerProviderStateMixin
   int _day = DateTime.now().weekday - 1;
   _Filter _filter = _Filter.all;
 
-  Future<List<Vehicle>> _future = Future.value(const <Vehicle>[]);
   int _seenRevision = -1;
-  String? _seenCenter;
 
   bool _searching = false;
   final TextEditingController _query = TextEditingController();
@@ -71,7 +72,12 @@ class _FindPageState extends State<FindPage> with SingleTickerProviderStateMixin
   void didChangeDependencies() {
     super.didChangeDependencies();
     _c = AppScope.of(context);
-    _sync();
+    // Les listes de la semaine viennent du cache (QueryBuilder) ; seule la recherche
+    // est relancée quand les données changent.
+    if (_seenRevision != _c.revision) {
+      _seenRevision = _c.revision;
+      if (_searching) _runSearch();
+    }
   }
 
   @override
@@ -87,15 +93,6 @@ class _FindPageState extends State<FindPage> with SingleTickerProviderStateMixin
     if (_tabs.index != _day) setState(() => _day = _tabs.index);
   }
 
-  void _sync({bool force = false}) {
-    final id = _c.current?.id;
-    if (!force && _seenRevision == _c.revision && _seenCenter == id) return;
-    _seenRevision = _c.revision;
-    _seenCenter = id;
-    _future = id == null ? Future.value(const <Vehicle>[]) : _c.vehiclesOfWeek(_weekStart);
-    if (_searching) _runSearch();
-  }
-
   void _runSearch() {
     _searchFuture = _c.search(_query.text);
   }
@@ -104,7 +101,6 @@ class _FindPageState extends State<FindPage> with SingleTickerProviderStateMixin
     HapticFeedback.selectionClick();
     setState(() {
       _weekStart = Fmt.addDays(_weekStart, 7 * delta);
-      _sync(force: true);
     });
   }
 
@@ -112,9 +108,19 @@ class _FindPageState extends State<FindPage> with SingleTickerProviderStateMixin
     final now = DateTime.now();
     setState(() {
       _weekStart = Fmt.startOfWeek(now);
-      _sync(force: true);
     });
     _tabs.animateTo(now.weekday - 1);
+  }
+
+  /// Tirer pour rafraîchir : synchronise avec le serveur si un compte est connecté,
+  /// sinon relit simplement la base locale.
+  Future<void> _refresh() async {
+    final sync = _c.sync;
+    if (sync != null && sync.status.phase != SyncPhase.off) {
+      await sync.syncNow();
+    } else {
+      _c.cache.invalidateAll();
+    }
   }
 
   void _openSearch() {
@@ -308,10 +314,13 @@ class _FindPageState extends State<FindPage> with SingleTickerProviderStateMixin
           onToday: _goToday,
         ),
         Expanded(
-          child: FutureBuilder<List<Vehicle>>(
-            future: _future,
-            builder: (context, snap) {
-              final all = snap.data ?? const <Vehicle>[];
+          child: QueryBuilder<List<Vehicle>>(
+            queryKey: 'vehicles:${_c.current?.id}:${_weekStart.millisecondsSinceEpoch}',
+            tags: {Tags.vehicles(_c.current?.id ?? '')},
+            fetch: () => _c.vehiclesOfWeek(_weekStart),
+            builder: (context, q) {
+              if (q.isFailure) return QueryError(onRetry: _refresh);
+              final all = q.data ?? const <Vehicle>[];
               final byDay = List.generate(7, (_) => <Vehicle>[]);
               for (final v in all) {
                 final i =
@@ -338,6 +347,7 @@ class _FindPageState extends State<FindPage> with SingleTickerProviderStateMixin
                             total: byDay[i].length,
                             now: now,
                             isToday: Fmt.sameDay(Fmt.addDays(_weekStart, i), today),
+                            onRefresh: _refresh,
                           ),
                       ],
                     ),
@@ -383,12 +393,14 @@ class _DayList extends StatelessWidget {
     required this.total,
     required this.now,
     required this.isToday,
+    required this.onRefresh,
   });
 
   final List<Vehicle> vehicles;
   final int total;
   final DateTime now;
   final bool isToday;
+  final Future<void> Function() onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -408,20 +420,26 @@ class _DayList extends StatelessWidget {
         message: 'Choisissez « Tous » pour tout voir.',
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 110),
-      itemCount: vehicles.length,
-      itemBuilder: (context, i) {
-        final v = vehicles[i];
-        return Appear(
-          index: i,
-          child: VehicleTile(
-            vehicle: v,
-            now: now,
-            onTap: () => context.push('/vehicle/${v.id}'),
-          ),
-        );
-      },
+    return RefreshIndicator(
+      color: context.pal.onGold,
+      backgroundColor: context.pal.gold,
+      onRefresh: onRefresh,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(bottom: 110),
+        itemCount: vehicles.length,
+        itemBuilder: (context, i) {
+          final v = vehicles[i];
+          return Appear(
+            index: i,
+            child: VehicleTile(
+              vehicle: v,
+              now: now,
+              onTap: () => context.push('/vehicle/${v.id}'),
+            ),
+          );
+        },
+      ),
     );
   }
 }

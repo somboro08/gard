@@ -8,8 +8,10 @@ import '../../core/icons.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
 import '../../state/app_controller.dart';
+import '../../state/query_cache.dart';
 import '../widgets/bars.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/query_builder.dart';
 import '../widgets/vehicle_ui.dart';
 import '../widgets/week_widgets.dart';
 
@@ -36,10 +38,6 @@ class _RevenuePageState extends State<RevenuePage> with SingleTickerProviderStat
   DateTime _weekStart = Fmt.startOfWeek(DateTime.now());
   int _day = DateTime.now().weekday - 1;
 
-  Future<_RevenueData> _future = Future.value(const _RevenueData([], 0));
-  int _seenRevision = -1;
-  String? _seenCenter;
-
   @override
   void initState() {
     super.initState();
@@ -53,7 +51,6 @@ class _RevenuePageState extends State<RevenuePage> with SingleTickerProviderStat
   void didChangeDependencies() {
     super.didChangeDependencies();
     _c = AppScope.of(context);
-    _sync();
   }
 
   @override
@@ -68,19 +65,10 @@ class _RevenuePageState extends State<RevenuePage> with SingleTickerProviderStat
     return _RevenueData(payments, pending);
   }
 
-  void _sync({bool force = false}) {
-    final id = _c.current?.id;
-    if (!force && _seenRevision == _c.revision && _seenCenter == id) return;
-    _seenRevision = _c.revision;
-    _seenCenter = id;
-    _future = _load();
-  }
-
   void _shiftWeek(int delta) {
     HapticFeedback.selectionClick();
     setState(() {
       _weekStart = Fmt.addDays(_weekStart, 7 * delta);
-      _sync(force: true);
     });
   }
 
@@ -88,7 +76,6 @@ class _RevenuePageState extends State<RevenuePage> with SingleTickerProviderStat
     final now = DateTime.now();
     setState(() {
       _weekStart = Fmt.startOfWeek(now);
-      _sync(force: true);
     });
     _tabs.animateTo(now.weekday - 1);
   }
@@ -113,10 +100,19 @@ class _RevenuePageState extends State<RevenuePage> with SingleTickerProviderStat
             onToday: _goToday,
           ),
           Expanded(
-            child: FutureBuilder<_RevenueData>(
-              future: _future,
-              builder: (context, snap) {
-                final data = snap.data ?? const _RevenueData([], 0);
+            child: QueryBuilder<_RevenueData>(
+              queryKey: 'revenue:${_c.current?.id}:${_weekStart.millisecondsSinceEpoch}',
+              // Les revenus dépendent des paiements ET des véhicules (reste à encaisser).
+              tags: {
+                Tags.payments(_c.current?.id ?? ''),
+                Tags.vehicles(_c.current?.id ?? ''),
+              },
+              fetch: _load,
+              builder: (context, q) {
+                if (q.isFailure) {
+                  return QueryError(onRetry: () => _c.cache.invalidateAll());
+                }
+                final data = q.data ?? const _RevenueData([], 0);
 
                 final byDay = List.generate(7, (_) => <Payment>[]);
                 for (final pay in data.payments) {

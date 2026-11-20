@@ -1,0 +1,40 @@
+# Production sur un VPS : API + PostgreSQL + HTTPS automatique (Caddy).
+#   DOMAIN=api.exemple.com JWT_SECRET=$(openssl rand -base64 48) POSTGRES_PASSWORD=$(openssl rand -hex 24) \
+#     docker compose -f docker-compose.prod.yml up -d --build
+# Le domaine doit déjà pointer (enregistrement DNS A) vers l'IP du serveur ; ports 80 et 443 ouverts.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: garde
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?définir POSTGRES_PASSWORD}
+      POSTGRES_DB: garde
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U garde"]
+      interval: 5s
+      retries: 10
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://garde:${POSTGRES_PASSWORD}@db:5432/garde
+      JWT_SECRET: ${JWT_SECRET:?définir JWT_SECRET (32 caractères minimum)}
+      NODE_ENV: production
+    expose: ["3000"] # joignable seulement par Caddy : jamais directement depuis Internet
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:?définir DOMAIN (ex. api.exemple.com)}
+    command: caddy reverse-proxy --from ${DOMAIN} --to api:3000
+    volumes: [caddy_data:/data, caddy_config:/config]
+    depends_on: [api]
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

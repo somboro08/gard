@@ -148,6 +148,9 @@ lots (les UUID évitent les collisions d'identifiants).
 - Orientation portrait uniquement.
 
 ## API serveur (PostgreSQL)
+
+Déploiement pas à pas et test de bout en bout : [docs/DEPLOY.md](docs/DEPLOY.md).
+
 Le dossier [`server/`](server/README.md) contient l'API (comptes, agents par centre, synchronisation).
 L'appli utilise encore SQLite en local ; le client `ApiParkingRepository` est l'étape suivante.
 

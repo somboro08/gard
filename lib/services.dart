@@ -10,6 +10,7 @@ import 'state/app_controller.dart';
 import 'sync/connectivity.dart';
 import 'sync/session.dart';
 import 'sync/sync_service.dart';
+import 'sync/team_service.dart';
 
 /// Assemble l'application : base locale, cache, compte, réseau, synchronisation.
 ///
@@ -44,6 +45,7 @@ Future<AppController> createAppController() async {
       ..sync = sync
       ..syncStore = store
       ..session = session
+      ..team = TeamService(api)
       ..apiConfig = config;
 
     await session.init();

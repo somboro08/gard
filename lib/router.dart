@@ -5,6 +5,7 @@ import 'core/icons.dart';
 import 'data/models.dart';
 import 'state/app_controller.dart';
 import 'ui/pages/account_page.dart';
+import 'ui/pages/team_page.dart';
 import 'ui/pages/center_form_page.dart';
 import 'ui/pages/find_page.dart';
 import 'ui/pages/register_page.dart';
@@ -77,6 +78,12 @@ GoRouter buildRouter(AppController controller) {
         path: '/account',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) => slidePage(state, const AccountPage()),
+      ),
+      GoRoute(
+        path: '/center/:id/team',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) =>
+            slidePage(state, TeamPage(centerId: state.pathParameters['id']!)),
       ),
       GoRoute(
         path: '/revenue',

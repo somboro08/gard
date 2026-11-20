@@ -238,6 +238,21 @@ class _SettingsSheet extends StatelessWidget {
               context.push('/account');
             },
           ),
+          if (c.current != null && c.roleOf(c.current!.id) != null) ...[
+            const SizedBox(height: 4),
+            ActionTile(
+              icon: AppIcons.user,
+              title: 'Équipe du centre',
+              subtitle: c.roleOf(c.current!.id) == 'owner'
+                  ? 'Ajouter ou retirer des agents'
+                  : 'Voir les membres du centre',
+              onTap: () {
+                final id = c.current!.id;
+                Navigator.pop(context);
+                context.push('/center/$id/team');
+              },
+            ),
+          ],
           const SizedBox(height: 10),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),

@@ -8,6 +8,7 @@ import '../data/sync_store.dart';
 import '../net/api_config.dart';
 import '../sync/session.dart';
 import '../sync/sync_service.dart';
+import '../sync/team_service.dart';
 import 'query_cache.dart';
 
 /// État global : centres, centre courant, thème. Toute modification de données
@@ -24,6 +25,7 @@ class AppController extends ChangeNotifier {
   SyncService? sync;
   SyncStore? syncStore;
   SessionController? session;
+  TeamService? team;
   ApiConfig? apiConfig;
 
   /// Rôle de l'utilisateur dans chaque centre synchronisé (« owner » / « agent »).
@@ -58,6 +60,9 @@ class AppController extends ChangeNotifier {
     final r = _roles[centerId];
     return r == null || r == 'owner';
   }
+
+  /// Rôle dans ce centre (« owner » / « agent »), null si le centre n'est pas synchronisé.
+  String? roleOf(String centerId) => _roles[centerId];
 
   Future<void> _loadRoles() async {
     final store = syncStore;

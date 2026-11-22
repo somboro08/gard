@@ -15,3 +15,5 @@ export const forbidden = (m = 'Accès refusé.') => new ApiError(403, 'forbidden
 // 404 aussi pour « existe mais pas à vous » : on ne révèle pas l'existence d'un centre/véhicule.
 export const notFound = (m = 'Introuvable.') => new ApiError(404, 'not_found', m);
 export const conflict = (code: string, m: string) => new ApiError(409, code, m);
+// Requête bien formée mais refusée sur le fond (ex. signature invalide) : le client ne doit pas réessayer.
+export const unprocessable = (code: string, m: string) => new ApiError(422, code, m);

@@ -33,6 +33,8 @@ export const vehicleJson = (r: Row) => ({
   collectedAt: iso(r.collected_at),
   pickupCheck: r.pickup_check ?? null,
   ticketVerified: r.ticket_verified,
+  ownerKey: r.owner_key ?? null,
+  pickupMethod: r.pickup_method ?? null,
   price: r.price,
   paidAmount: r.paid_amount,
   updatedAt: iso(r.updated_at),

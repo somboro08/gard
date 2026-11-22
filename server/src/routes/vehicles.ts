@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { requireAuth, requireOwner, roleInCenter, vehicleCenter } from '../auth.js';
 import { randomInt } from 'node:crypto';
 import { type Db, type Queryable, tx } from '../db.js';
-import { conflict, notFound } from '../errors.js';
+import { conflict, notFound, unprocessable } from '../errors.js';
+import { B64URL_KEY, B64URL_NONCE, B64URL_SIG, enrollMessage, pickupMessage, verifyEd25519 } from '../pickup.js';
 import { plateDisplay, plateKey } from '../plates.js';
 import { paymentJson, vehicleJson } from '../serializers.js';
 import { parse } from '../validate.js';
@@ -40,6 +41,14 @@ const collectBody = z.object({
   pickupCheck: z.enum(['exact', 'close', 'different', 'skipped']),
   ticketVerified: z.boolean(),
   collectedAt: iso.optional(),
+  // « key » : le client a signé le défi avec la clé enrôlée au dépôt (preuve jointe, revérifiée ici).
+  pickupMethod: z.enum(['key', 'manual']).default('manual'),
+  proof: z.object({ nonce: z.string().regex(B64URL_NONCE), sig: z.string().regex(B64URL_SIG) }).optional(),
+});
+const enrollBody = z.object({
+  ownerKey: z.string().regex(B64URL_KEY, 'Clé invalide.'),
+  nonce: z.string().regex(B64URL_NONCE, 'Nonce invalide.'),
+  sig: z.string().regex(B64URL_SIG, 'Signature invalide.'),
 });
 const range = z.object({ from: iso, to: iso });
 
@@ -257,23 +266,52 @@ export const vehicleRoutes =
       return { vehicle: vehicleJson(r.rows[0]) };
     });
 
+    // Enrôlement de la clé du client (au dépôt). Une seule clé par véhicule, jamais remplaçable.
+    app.post<{ Params: { id: string } }>('/vehicles/:id/owner-key', async (req) => {
+      parse(uid, req.params.id);
+      const centerId = await vehicleCenter(db, req.user.sub, req.params.id);
+      const b = parse(enrollBody, req.body);
+      if (!verifyEd25519(b.ownerKey, enrollMessage(req.params.id, b.nonce), b.sig)) {
+        throw unprocessable('invalid_proof', "Preuve d'enrôlement invalide : la clé n'a pas signé ce véhicule.");
+      }
+      const out = await tx(db, async (c) => {
+        const cur = (await c.query('SELECT owner_key, collected_at FROM vehicles WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+        if (cur.owner_key === b.ownerKey) return null; // rejeu : déjà enrôlée
+        if (cur.owner_key) throw conflict('key_already_set', 'Une clé est déjà enrôlée pour ce véhicule.');
+        if (cur.collected_at) throw conflict('already_collected', 'Ce véhicule a déjà été remis.');
+        const r = await c.query('UPDATE vehicles SET owner_key = $2, updated_at = now() WHERE id = $1 RETURNING *', [req.params.id, b.ownerKey]);
+        await audit(c, centerId, req.user.sub, 'vehicle.enroll', req.params.id, {});
+        return r.rows[0];
+      });
+      const row = out ?? (await db.query('SELECT * FROM vehicles WHERE id = $1', [req.params.id])).rows[0];
+      return { vehicle: vehicleJson(row) };
+    });
+
     // Remise du véhicule : une seule fois, avec le résultat de la vérification.
     app.post<{ Params: { id: string } }>('/vehicles/:id/collect', async (req) => {
       parse(uid, req.params.id);
       const centerId = await vehicleCenter(db, req.user.sub, req.params.id);
       const b = parse(collectBody, req.body);
       const at = b.collectedAt ? new Date(b.collectedAt) : new Date();
+      if (b.pickupMethod === 'key') {
+        const key = (await db.query('SELECT owner_key FROM vehicles WHERE id = $1', [req.params.id])).rows[0]?.owner_key;
+        if (!key) throw unprocessable('no_key', "Ce véhicule n'a pas de clé client enrôlée.");
+        if (!b.proof || !verifyEd25519(key, pickupMessage(req.params.id, b.proof.nonce), b.proof.sig)) {
+          throw unprocessable('invalid_proof', 'Preuve de remise invalide : la signature du client ne correspond pas.');
+        }
+      }
       const r = await db.query(
         `UPDATE vehicles SET collected_at = $2, pickup_check = $3, ticket_verified = $4,
-                collected_by = $5, updated_at = now()
+                pickup_method = $6, collected_by = $5, updated_at = now()
           WHERE id = $1 AND collected_at IS NULL RETURNING *`,
-        [req.params.id, at, b.pickupCheck, b.ticketVerified, req.user.sub],
+        [req.params.id, at, b.pickupCheck, b.ticketVerified, req.user.sub, b.pickupMethod],
       );
       if (!r.rows[0]) throw conflict('already_collected', 'Ce véhicule a déjà été remis.');
       const v = r.rows[0];
       await audit(db, centerId, req.user.sub, 'vehicle.collect', req.params.id, {
         pickupCheck: b.pickupCheck,
         ticketVerified: b.ticketVerified,
+        pickupMethod: b.pickupMethod,
         unpaid: Math.max(0, v.price - v.paid_amount),
       });
       return { vehicle: vehicleJson(v) };

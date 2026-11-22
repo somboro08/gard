@@ -10,6 +10,7 @@ import '../../state/app_controller.dart';
 import '../widgets/bars.dart';
 import '../widgets/buttons.dart';
 import '../widgets/feedback.dart';
+import 'exchange_page.dart' show showResponseSheet;
 
 /// Espace client : ce téléphone devient la « clé » du véhicule déposé.
 /// Au dépôt, l'agent enrôle ce téléphone ; à la sortie, seul lui peut prouver que son

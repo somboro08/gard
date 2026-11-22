@@ -96,6 +96,12 @@ test/widget_test.dart       tests de logique pure
 - Se déconnecter efface les données locales (téléphone partagé).
 - Adresse du serveur : `--dart-define=API_URL=https://…` au build, ou Compte › Serveur dans l'app.
 
+### Remise sécurisée (clé du téléphone du client)
+
+Voir [docs/SECURE_PICKUP.md](docs/SECURE_PICKUP.md). Au dépôt : ticket › « Sécuriser avec le
+téléphone du client ». À la sortie : fiche › « Téléphone du client › Vérifier ». Côté client :
+Réglages › Espace client.
+
 ### Cache et états
 
 `QueryCache` (lib/state/query_cache.dart) : valeur gardée en mémoire (30 s), appels simultanés

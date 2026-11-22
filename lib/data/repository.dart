@@ -39,7 +39,15 @@ abstract class ParkingRepository {
     required DateTime at,
     required PickupCheck check,
     required bool ticketVerified,
+    PickupMethod method = PickupMethod.manual,
+    PickupProof? proof,
   });
+
+  /// Enregistre la clé publique du client (enrôlée au dépôt) avec sa preuve de possession.
+  Future<void> setOwnerKey(String vehicleId, {required String key, required String nonce, required String sig});
+
+  /// Annule une clé refusée par le serveur (autre clé déjà enrôlée ailleurs).
+  Future<void> clearOwnerKey(String vehicleId);
   Future<void> deleteVehicle(String id);
 
   Future<Vehicle?> vehicleById(String id);

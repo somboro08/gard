@@ -6,6 +6,8 @@ import 'data/sqlite_sync_store.dart';
 import 'net/api_client.dart';
 import 'net/api_config.dart';
 import 'net/token_store.dart';
+import 'security/pickup_crypto.dart';
+import 'security/secure_secret_store.dart';
 import 'state/app_controller.dart';
 import 'sync/connectivity.dart';
 import 'sync/session.dart';
@@ -18,7 +20,7 @@ import 'sync/team_service.dart';
 /// (plugin indisponible…), elle reste utilisable en mode local au lieu de planter.
 Future<AppController> createAppController() async {
   final repo = SqliteParkingRepository();
-  final controller = AppController(repo);
+  final controller = AppController(repo)..vault = ClientVault(SecureSecretStore());
   await controller.init(); // ouvre SQLite (migrations comprises)
 
   try {

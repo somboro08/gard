@@ -238,6 +238,16 @@ class _SettingsSheet extends StatelessWidget {
               context.push('/account');
             },
           ),
+          const SizedBox(height: 4),
+          ActionTile(
+            icon: AppIcons.shield,
+            title: 'Espace client',
+            subtitle: 'Faire de ce téléphone la clé de mon véhicule',
+            onTap: () {
+              Navigator.pop(context);
+              context.push('/client');
+            },
+          ),
           if (c.current != null && c.roleOf(c.current!.id) != null) ...[
             const SizedBox(height: 4),
             ActionTile(

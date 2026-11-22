@@ -422,6 +422,9 @@ class SyncService extends ChangeNotifier {
         }
       case 'vehicle.update':
         await _api.patch('/vehicles/${op.entityId}', body: p);
+      case 'vehicle.ownerkey':
+        // Rejeu d'une même clé : accepté par le serveur. Une autre clé déjà enrôlée : refus définitif.
+        await _api.post('/vehicles/${op.entityId}/owner-key', body: p);
       case 'vehicle.collect':
         try {
           await _api.post('/vehicles/${op.entityId}/collect', body: p);
@@ -450,6 +453,10 @@ class SyncService extends ChangeNotifier {
     if (op.kind == 'payment.add') {
       final id = op.payload['id'];
       if (id is String) await _store.dropLocalPayment(id);
+    }
+    if (op.kind == 'vehicle.ownerkey') {
+      // Le serveur a refusé cette clé : on ne garde pas localement une sécurité qui n'existe pas ailleurs.
+      await _store.clearLocalOwnerKey(op.entityId);
     }
   }
 

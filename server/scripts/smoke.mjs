@@ -2,7 +2,7 @@
 // Test de bout en bout d'un serveur Garde DÉJÀ lancé (local, Docker ou production).
 //   node scripts/smoke.mjs https://api.exemple.com
 // Crée deux comptes jetables et un centre de test ; ne touche à aucune donnée existante.
-import { randomUUID, randomInt } from 'node:crypto';
+import { randomUUID, randomInt, randomBytes, generateKeyPairSync, sign } from 'node:crypto';
 import assert from 'node:assert/strict';
 
 const base = (process.argv[2] ?? process.env.API_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
@@ -127,6 +127,44 @@ assert.equal(collect.status, 200, JSON.stringify(collect.body));
 const twice = await call('POST', `/vehicles/${vehicleId}/collect`, { token: A.accessToken, body: { pickupCheck: 'exact', ticketVerified: true } });
 assert.equal(twice.status, 409);
 ok('remise enregistrée ; une seconde remise est refusée');
+
+// --- Remise sécurisée par clé du téléphone du client -------------------------
+{
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const pub = publicKey.export({ format: 'der', type: 'spki' }).subarray(12).toString('base64url');
+  const sig = (m) => sign(null, Buffer.from(m), privateKey).toString('base64url');
+  const nonce = () => randomBytes(16).toString('base64url');
+  const sv = await call('POST', `/centers/${centerId}/vehicles`, { token: A.accessToken, body: { type: 'moto', ownerName: 'Client sécurisé' } });
+  assert.equal(sv.status, 201);
+  const id = sv.body.vehicle.id;
+
+  const n1 = nonce();
+  const enr = await call('POST', `/vehicles/${id}/owner-key`, {
+    token: A.accessToken, body: { ownerKey: pub, nonce: n1, sig: sig(`GARDE-ENROLL-1|${id}|${n1}`) },
+  });
+  assert.equal(enr.status, 200, JSON.stringify(enr.body));
+  ok('clé du téléphone du client enrôlée (preuve de possession vérifiée par le serveur)');
+
+  const n2 = nonce();
+  const atk = generateKeyPairSync('ed25519').privateKey;
+  const attacker = { sign: (m) => sign(null, Buffer.from(m), atk).toString('base64url') };
+  const forged = await call('POST', `/vehicles/${id}/collect`, {
+    token: A.accessToken,
+    body: { pickupCheck: 'exact', ticketVerified: true, pickupMethod: 'key',
+            proof: { nonce: n2, sig: attacker.sign(`GARDE-PICKUP-1|${id}|${n2}`) } },
+  });
+  assert.equal(forged.status, 422);
+  ok("une fausse preuve de remise (mauvaise clé) est refusée : l'agent ne peut pas tricher");
+
+  const n3 = nonce();
+  const good = await call('POST', `/vehicles/${id}/collect`, {
+    token: A.accessToken,
+    body: { pickupCheck: 'exact', ticketVerified: true, pickupMethod: 'key', proof: { nonce: n3, sig: sig(`GARDE-PICKUP-1|${id}|${n3}`) } },
+  });
+  assert.equal(good.status, 200, JSON.stringify(good.body));
+  assert.equal(good.body.vehicle.pickupMethod, 'key');
+  ok('remise avec la bonne preuve : acceptée, méthode « key » tracée');
+}
 
 // --- Sessions ---------------------------------------------------------------
 const rotated = await call('POST', '/auth/refresh', { body: { refreshToken: O.refreshToken } });

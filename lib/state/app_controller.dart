@@ -6,6 +6,7 @@ import '../data/models.dart';
 import '../data/repository.dart';
 import '../data/sync_store.dart';
 import '../net/api_config.dart';
+import '../security/pickup_crypto.dart';
 import '../sync/session.dart';
 import '../sync/sync_service.dart';
 import '../sync/team_service.dart';
@@ -26,6 +27,9 @@ class AppController extends ChangeNotifier {
   SyncStore? syncStore;
   SessionController? session;
   TeamService? team;
+
+  /// Clés des tickets sécurisés quand ce téléphone est celui du client.
+  ClientVault? vault;
   ApiConfig? apiConfig;
 
   /// Rôle de l'utilisateur dans chaque centre synchronisé (« owner » / « agent »).
@@ -263,13 +267,33 @@ class AppController extends ChangeNotifier {
     return _repo.pendingAmount(center.id);
   }
 
-  Future<void> collect(Vehicle v, PickupCheck check, {required bool ticketVerified}) async {
+  Future<void> collect(
+    Vehicle v,
+    PickupCheck check, {
+    required bool ticketVerified,
+    PickupMethod method = PickupMethod.manual,
+    PickupProof? proof,
+  }) async {
     await _repo.markCollected(
       v.id,
       at: DateTime.now(),
       check: check,
       ticketVerified: ticketVerified,
+      method: method,
+      proof: proof,
     );
+    _touch(v.centerId, vehicleIds: [v.id]);
+    _bump();
+  }
+
+  /// Enregistre la clé du téléphone du client (preuve d'enrôlement déjà vérifiée par l'appelant).
+  Future<void> enrollOwnerKey(
+    Vehicle v, {
+    required String key,
+    required String nonce,
+    required String sig,
+  }) async {
+    await _repo.setOwnerKey(v.id, key: key, nonce: nonce, sig: sig);
     _touch(v.centerId, vehicleIds: [v.id]);
     _bump();
   }

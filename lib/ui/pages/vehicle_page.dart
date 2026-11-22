@@ -9,6 +9,7 @@ import '../../core/icons.dart';
 import '../../core/plates.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
+import '../../security/pickup_crypto.dart';
 import '../../state/app_controller.dart';
 import '../../state/query_cache.dart';
 import '../flows.dart';
@@ -38,6 +39,7 @@ class _VehiclePageState extends State<VehiclePage> {
   late bool _ticketOk;
   String? _scannedPlate;
   PlateMatch? _match;
+  PickupProofResult? _keyProof; // preuve de la clé du client (remise sécurisée)
   bool _busy = false;
   VoidCallback? _stopListening;
 
@@ -92,6 +94,42 @@ class _VehiclePageState extends State<VehiclePage> {
     }
   }
 
+  /// Le client prouve, avec la clé de son téléphone, qu'il est le propriétaire (sans Internet).
+  Future<void> _verifyKey(Vehicle v) async {
+    final key = v.ownerKey;
+    if (key == null) return;
+    final center = AppScope.read(context).centerById(v.centerId)?.name ?? 'Garde';
+    final ex = AgentExchange.challenge(
+      vehicleId: v.id,
+      code: v.code,
+      center: center,
+      plate: v.plate,
+      ownerKey: key,
+    );
+    final res = await context.push<PickupProofResult>('/exchange', extra: ex);
+    if (res == null || !res.isOk || !mounted) return;
+    HapticFeedback.mediumImpact();
+    setState(() => _keyProof = res);
+    showToast(context, 'Identité du propriétaire vérifiée.');
+  }
+
+  Future<void> _secure(Vehicle v) async {
+    final center = AppScope.read(context).centerById(v.centerId)?.name ?? 'Garde';
+    final ex = AgentExchange.enroll(vehicleId: v.id, code: v.code, center: center, plate: v.plate);
+    final res = await context.push<PickupProofResult>('/exchange', extra: ex);
+    if (res == null || !res.isOk || !mounted) return;
+    try {
+      await AppScope.read(context).enrollOwnerKey(v, key: res.key!, nonce: res.nonce!, sig: res.sig!);
+    } catch (e, st) {
+      ErrorReporter.report(e, st, where: 'enrôlement de la clé');
+      if (mounted) showToast(context, 'Enregistrement impossible. Réessayez.', error: true);
+      return;
+    }
+    if (!mounted) return;
+    await _load();
+    if (mounted) showToast(context, 'Véhicule sécurisé avec le téléphone du client.');
+  }
+
   Future<void> _scanPlate() async {
     final v = _v;
     if (v == null) return;
@@ -129,7 +167,14 @@ class _VehiclePageState extends State<VehiclePage> {
     }
 
     final issues = <String>[];
-    if (!_ticketOk) issues.add('Le ticket du client n\'a pas été validé.');
+    final keyOk = _keyProof != null && v.isSecured;
+    if (v.isSecured && !keyOk) {
+      issues.add(
+        'Ce véhicule est sécurisé : le téléphone du client n\'a PAS prouvé son identité (client sans son téléphone ?).',
+      );
+    }
+    // La clé du téléphone prouve la présence du propriétaire : le ticket n'est alors plus nécessaire.
+    if (!_ticketOk && !keyOk) issues.add('Le ticket du client n\'a pas été validé.');
     if (v.hasPlate) {
       switch (_match) {
         case null:
@@ -166,7 +211,13 @@ class _VehiclePageState extends State<VehiclePage> {
 
     setState(() => _busy = true);
     try {
-      await AppScope.read(context).collect(v, check, ticketVerified: _ticketOk);
+      await AppScope.read(context).collect(
+        v,
+        check,
+        ticketVerified: _ticketOk,
+        method: keyOk ? PickupMethod.key : PickupMethod.manual,
+        proof: keyOk ? PickupProof(nonce: _keyProof!.nonce!, sig: _keyProof!.sig!) : null,
+      );
       HapticFeedback.heavyImpact();
       if (!mounted) return;
       await _load();
@@ -269,6 +320,7 @@ class _VehiclePageState extends State<VehiclePage> {
       onSelected: (value) {
         if (value == 'edit') _edit(v);
         if (value == 'delete') _delete(v);
+        if (value == 'secure') _secure(v);
       },
       itemBuilder: (_) => [
         PopupMenuItem<String>(
@@ -276,6 +328,12 @@ class _VehiclePageState extends State<VehiclePage> {
           height: 52,
           child: Text('Modifier', style: context.tt.bodyLarge),
         ),
+        if (!v.isSecured && !v.isCollected)
+          PopupMenuItem<String>(
+            value: 'secure',
+            height: 52,
+            child: Text('Sécuriser avec le téléphone du client', style: context.tt.bodyLarge),
+          ),
         // Sur un centre synchronisé, seul le propriétaire supprime (preuve de remise / paiements).
         if (AppScope.read(context).canManage(v.centerId))
           PopupMenuItem<String>(
@@ -428,6 +486,15 @@ class _VehiclePageState extends State<VehiclePage> {
             value: check?.label ?? 'Non vérifiée',
             valueColor: ok ? p.success : p.warn,
           ),
+          if (v.pickupMethod != null || v.isSecured)
+            InfoRow(
+              icon: AppIcons.user,
+              label: 'Identité du client',
+              value: v.pickupMethod == PickupMethod.key
+                  ? 'Vérifiée par la clé de son téléphone'
+                  : (v.isSecured ? 'Remis SANS la clé du client' : 'Contrôle manuel'),
+              valueColor: v.pickupMethod == PickupMethod.key ? p.success : p.warn,
+            ),
         ],
       ),
     ];
@@ -461,6 +528,17 @@ class _VehiclePageState extends State<VehiclePage> {
               padding: const EdgeInsets.only(bottom: 10),
               child: Text('Vérification à la sortie', style: context.tt.titleMedium),
             ),
+            if (v.isSecured)
+              _Step(
+                icon: AppIcons.shield,
+                title: 'Téléphone du client',
+                subtitle: _keyProof != null
+                    ? 'Identité du propriétaire vérifiée'
+                    : 'Le client prouve qu\'il est le propriétaire (sans Internet)',
+                state: _keyProof != null ? _StepState.ok : _StepState.pending,
+                actionLabel: _keyProof != null ? null : 'Vérifier',
+                onAction: () => _verifyKey(v),
+              ),
             _Step(
               icon: AppIcons.ticket,
               title: 'Ticket',

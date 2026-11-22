@@ -4,7 +4,10 @@ import 'package:go_router/go_router.dart';
 import 'core/icons.dart';
 import 'data/models.dart';
 import 'state/app_controller.dart';
+import 'security/pickup_crypto.dart';
 import 'ui/pages/account_page.dart';
+import 'ui/pages/client_page.dart';
+import 'ui/pages/exchange_page.dart';
 import 'ui/pages/team_page.dart';
 import 'ui/pages/center_form_page.dart';
 import 'ui/pages/find_page.dart';
@@ -41,7 +44,8 @@ GoRouter buildRouter(AppController controller) {
       final location = state.matchedLocation;
       if (controller.centers.isEmpty) {
         // Sans centre : accueil, ou écran Compte (se connecter pour retrouver ses centres).
-        return (location == '/onboarding' || location == '/account') ? null : '/onboarding';
+        const open = {'/onboarding', '/account', '/client', '/scan/request', '/scan/response'};
+        return open.contains(location) ? null : '/onboarding';
       }
       if (location == '/onboarding') return '/find';
       return null;
@@ -78,6 +82,19 @@ GoRouter buildRouter(AppController controller) {
         path: '/account',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) => slidePage(state, const AccountPage()),
+      ),
+      GoRoute(
+        path: '/client',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => slidePage(state, const ClientPage()),
+      ),
+      GoRoute(
+        path: '/exchange',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) {
+          final ex = state.extra;
+          return slidePage(state, ex is AgentExchange ? ExchangePage(exchange: ex) : const _NotFoundPage());
+        },
       ),
       GoRoute(
         path: '/center/:id/team',
@@ -140,6 +157,33 @@ GoRouter buildRouter(AppController controller) {
         path: '/scan/qr',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) => risePage(state, const ScanQrPage()),
+      ),
+      // Remise sécurisée : le client scanne la demande de l'agent, l'agent scanne la réponse.
+      GoRoute(
+        path: '/scan/request',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => risePage(
+          state,
+          ScanQrPage(
+            accept: (raw) => PickupRequest.parse(raw) != null,
+            hint: 'Scannez le QR affiché par l\'agent',
+            unknownHint: 'Ce QR n\'est pas une demande Garde.',
+            allowManual: false,
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/scan/response',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) => risePage(
+          state,
+          ScanQrPage(
+            accept: (raw) => PickupCodec.decode(raw) != null,
+            hint: 'Scannez la réponse sur le téléphone du client',
+            unknownHint: 'Ce QR n\'est pas une réponse Garde.',
+            allowManual: false,
+          ),
+        ),
       ),
       GoRoute(
         path: '/scan/plate',

@@ -22,7 +22,7 @@ class OutboxOp {
   final int seq;
 
   /// center.create | center.update | center.delete | vehicle.create | vehicle.update |
-  /// vehicle.collect | vehicle.delete | payment.add
+  /// vehicle.collect | vehicle.ownerkey | vehicle.delete | payment.add
   final String kind;
 
   /// Centre ou véhicule concerné (pour un paiement : le véhicule).
@@ -56,6 +56,7 @@ class OutboxOp {
         'vehicle.create' => 'Enregistrement d\'un véhicule',
         'vehicle.update' => 'Modification d\'un véhicule',
         'vehicle.collect' => 'Remise d\'un véhicule',
+        'vehicle.ownerkey' => 'Clé de sécurité du client',
         'vehicle.delete' => 'Suppression d\'un véhicule',
         'payment.add' => 'Encaissement',
         _ => kind,
@@ -109,6 +110,9 @@ abstract class SyncStore {
   /// Annule localement un encaissement refusé par le serveur.
   Future<void> dropLocalPayment(String paymentId);
 
+  /// Retire la clé du client d'un véhicule (refusée par le serveur).
+  Future<void> clearLocalOwnerKey(String vehicleId);
+
   /// Déconnexion : efface toutes les données de cet appareil (outbox comprise).
   Future<void> wipeAll();
 }
@@ -152,15 +156,22 @@ Map<String, Object?> vehicleUpdatePayload(Vehicle v) => {
       'price': v.price,
     };
 
+Map<String, Object?> ownerKeyPayload({required String key, required String nonce, required String sig}) =>
+    {'ownerKey': key, 'nonce': nonce, 'sig': sig};
+
 Map<String, Object?> collectPayload({
   required DateTime at,
   required PickupCheck check,
   required bool ticketVerified,
+  PickupMethod method = PickupMethod.manual,
+  PickupProof? proof,
 }) =>
     {
       'collectedAt': isoUtc(at),
       'pickupCheck': check.name,
       'ticketVerified': ticketVerified,
+      'pickupMethod': method.name,
+      if (proof != null) 'proof': {'nonce': proof.nonce, 'sig': proof.sig},
     };
 
 Map<String, Object?> paymentPayload(Payment p) => {

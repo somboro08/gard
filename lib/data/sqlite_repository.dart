@@ -10,7 +10,7 @@ import 'sync_store.dart';
 
 /// Version du schéma. v2 : tarifs par centre, prix/paiements des véhicules.
 /// v3 : file d'envoi (outbox) et état de synchronisation avec l'API.
-const int _schemaVersion = 3;
+const int _schemaVersion = 4;
 
 const List<String> _schema = [
   '''
@@ -43,7 +43,11 @@ const List<String> _schema = [
     pickup_check TEXT,
     ticket_verified INTEGER NOT NULL DEFAULT 0,
     price INTEGER NOT NULL DEFAULT 0,
-    paid_amount INTEGER NOT NULL DEFAULT 0
+    paid_amount INTEGER NOT NULL DEFAULT 0,
+    owner_key TEXT,
+    owner_key_proof TEXT,
+    pickup_method TEXT,
+    pickup_proof TEXT
   )
   ''',
   'CREATE INDEX idx_vehicles_center_day ON vehicles(center_id, deposited_at)',
@@ -140,6 +144,12 @@ class SqliteParkingRepository implements ParkingRepository {
         if (oldVersion < 3) {
           for (final sql in _syncSchema) {
             await db.execute(sql);
+          }
+        }
+        // v3 → v4 : remise sécurisée (clé du client, preuves à envoyer au serveur).
+        if (oldVersion < 4) {
+          for (final col in ['owner_key', 'owner_key_proof', 'pickup_method', 'pickup_proof']) {
+            await db.execute('ALTER TABLE vehicles ADD COLUMN $col TEXT');
           }
         }
       },
@@ -335,11 +345,47 @@ class SqliteParkingRepository implements ParkingRepository {
   }
 
   @override
+  Future<void> setOwnerKey(
+    String vehicleId, {
+    required String key,
+    required String nonce,
+    required String sig,
+  }) async {
+    await _d.transaction((txn) async {
+      final rows = await txn.query('vehicles', columns: ['center_id'], where: 'id = ?', whereArgs: [vehicleId], limit: 1);
+      if (rows.isEmpty) throw StateError('Véhicule introuvable.');
+      await txn.update(
+        'vehicles',
+        {'owner_key': key, 'owner_key_proof': '$nonce.$sig'},
+        where: 'id = ?',
+        whereArgs: [vehicleId],
+      );
+      if (syncEnabled) {
+        await enqueueOp(txn,
+            kind: 'vehicle.ownerkey',
+            entityId: vehicleId,
+            centerId: rows.first['center_id'] as String?,
+            payload: ownerKeyPayload(key: key, nonce: nonce, sig: sig));
+      }
+    });
+  }
+
+  @override
+  Future<void> clearOwnerKey(String vehicleId) => _d.update(
+        'vehicles',
+        {'owner_key': null, 'owner_key_proof': null},
+        where: 'id = ?',
+        whereArgs: [vehicleId],
+      );
+
+  @override
   Future<void> markCollected(
     String id, {
     required DateTime at,
     required PickupCheck check,
     required bool ticketVerified,
+    PickupMethod method = PickupMethod.manual,
+    PickupProof? proof,
   }) async {
     await _d.transaction((txn) async {
       await txn.update(
@@ -348,6 +394,8 @@ class SqliteParkingRepository implements ParkingRepository {
           'collected_at': at.millisecondsSinceEpoch,
           'pickup_check': check.name,
           'ticket_verified': ticketVerified ? 1 : 0,
+          'pickup_method': method.name,
+          'pickup_proof': proof == null ? null : '${proof.nonce}.${proof.sig}',
         },
         where: 'id = ?',
         whereArgs: [id],
@@ -358,7 +406,13 @@ class SqliteParkingRepository implements ParkingRepository {
             kind: 'vehicle.collect',
             entityId: id,
             centerId: rows.isEmpty ? null : rows.first['center_id'] as String?,
-            payload: collectPayload(at: at, check: check, ticketVerified: ticketVerified));
+            payload: collectPayload(
+              at: at,
+              check: check,
+              ticketVerified: ticketVerified,
+              method: method,
+              proof: proof,
+            ));
       }
     });
   }

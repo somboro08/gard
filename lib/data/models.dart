@@ -44,6 +44,43 @@ enum PickupCheck {
   }
 }
 
+/// Comment l'identité du client a été vérifiée à la remise.
+enum PickupMethod {
+  /// Le téléphone du client a signé un défi avec la clé enrôlée au dépôt.
+  key,
+
+  /// Contrôle manuel (ticket, plaque, pièce) : pas de preuve cryptographique.
+  manual;
+
+  String get label => switch (this) {
+        PickupMethod.key => 'Clé du téléphone du client',
+        PickupMethod.manual => 'Contrôle manuel',
+      };
+
+  static PickupMethod? parse(String? s) {
+    for (final m in PickupMethod.values) {
+      if (m.name == s) return m;
+    }
+    return null;
+  }
+}
+
+/// Preuve que le téléphone du client a signé le défi de remise (revérifiée par le serveur).
+class PickupProof {
+  const PickupProof({required this.nonce, required this.sig});
+
+  final String nonce;
+  final String sig;
+
+  /// Format de stockage local : « nonce.signature » (base64url, sans « . »).
+  static PickupProof? parse(String? stored) {
+    if (stored == null) return null;
+    final i = stored.indexOf('.');
+    if (i <= 0 || i == stored.length - 1) return null;
+    return PickupProof(nonce: stored.substring(0, i), sig: stored.substring(i + 1));
+  }
+}
+
 /// Moyen de paiement. Seul `cash` est proposé dans l'app pour l'instant ;
 /// `wallet` est réservé au futur portefeuille.
 enum PaymentMethod {
@@ -144,6 +181,8 @@ class Vehicle {
     this.ticketVerified = false,
     this.price = 0,
     this.paidAmount = 0,
+    this.ownerKey,
+    this.pickupMethod,
   });
 
   final String id;
@@ -171,6 +210,14 @@ class Vehicle {
 
   /// Total déjà encaissé (FCFA).
   final int paidAmount;
+
+  /// Clé publique Ed25519 (base64url) du téléphone du client, enrôlée au dépôt. Null = non sécurisé.
+  final String? ownerKey;
+
+  /// Moyen de vérification utilisé à la remise (null tant que le véhicule n'est pas remis).
+  final PickupMethod? pickupMethod;
+
+  bool get isSecured => ownerKey != null;
 
   String get plateKey => Plates.key(plate);
   bool get hasPlate => plateKey.isNotEmpty;
@@ -211,6 +258,8 @@ class Vehicle {
         ticketVerified: ticketVerified,
         price: price ?? this.price,
         paidAmount: paidAmount,
+        ownerKey: ownerKey,
+        pickupMethod: pickupMethod,
       );
 
   Map<String, Object?> toMap() => {
@@ -230,6 +279,8 @@ class Vehicle {
         'ticket_verified': ticketVerified ? 1 : 0,
         'price': price,
         'paid_amount': paidAmount,
+        'owner_key': ownerKey,
+        'pickup_method': pickupMethod?.name,
       };
 
   factory Vehicle.fromMap(Map<String, Object?> m) {
@@ -250,6 +301,8 @@ class Vehicle {
       ticketVerified: ((m['ticket_verified'] as int?) ?? 0) == 1,
       price: (m['price'] as int?) ?? 0,
       paidAmount: (m['paid_amount'] as int?) ?? 0,
+      ownerKey: m['owner_key'] as String?,
+      pickupMethod: PickupMethod.parse(m['pickup_method'] as String?),
     );
   }
 }

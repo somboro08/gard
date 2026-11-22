@@ -9,9 +9,22 @@ import '../../core/theme.dart';
 import '../flows.dart';
 import '../widgets/scan_overlay.dart';
 
-/// Scan du QR du ticket. Retourne le contenu brut du QR (ou le code saisi à la main).
+/// Scan d'un QR. Par défaut : le ticket (retourne le contenu brut du QR ou le code saisi à la main).
+/// Avec [accept], sert aussi aux échanges de la remise sécurisée (défi / réponse du téléphone du client).
 class ScanQrPage extends StatefulWidget {
-  const ScanQrPage({super.key});
+  const ScanQrPage({
+    super.key,
+    this.accept,
+    this.hint = 'Placez le QR du ticket dans le cadre',
+    this.unknownHint = 'Ce QR n\'est pas un ticket Garde.',
+    this.allowManual = true,
+  });
+
+  /// Filtre sur le contenu brut ; null = QR de ticket Garde.
+  final bool Function(String raw)? accept;
+  final String hint;
+  final String unknownHint;
+  final bool allowManual;
 
   @override
   State<ScanQrPage> createState() => _ScanQrPageState();
@@ -39,7 +52,8 @@ class _ScanQrPageState extends State<ScanQrPage> {
     for (final b in capture.barcodes) {
       final raw = b.rawValue;
       if (raw == null) continue;
-      if (Tickets.parse(raw) != null) {
+      final accepted = widget.accept != null ? widget.accept!(raw) : Tickets.parse(raw) != null;
+      if (accepted) {
         _done = true;
         HapticFeedback.mediumImpact();
         context.pop(raw);
@@ -103,9 +117,7 @@ class _ScanQrPageState extends State<ScanQrPage> {
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 200),
                       child: Text(
-                        _unknown
-                            ? 'Ce QR n\'est pas un ticket Garde.'
-                            : 'Placez le QR du ticket dans le cadre',
+                        _unknown ? widget.unknownHint : widget.hint,
                         key: ValueKey(_unknown),
                         textAlign: TextAlign.center,
                         style: TextStyle(
@@ -115,22 +127,24 @@ class _ScanQrPageState extends State<ScanQrPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: OutlinedButton.icon(
-                        onPressed: _typeCode,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white54, width: 1.5),
-                          shape: const StadiumBorder(),
-                          textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                    if (widget.allowManual) ...[
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: OutlinedButton.icon(
+                          onPressed: _typeCode,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white54, width: 1.5),
+                            shape: const StadiumBorder(),
+                            textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                          ),
+                          icon: const Icon(AppIcons.keyboard, size: 22),
+                          label: const Text('Saisir le code à la place'),
                         ),
-                        icon: const Icon(AppIcons.keyboard, size: 22),
-                        label: const Text('Saisir le code à la place'),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

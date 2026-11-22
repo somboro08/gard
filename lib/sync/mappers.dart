@@ -50,6 +50,8 @@ Vehicle vehicleFromJson(Map<String, dynamic> j) => Vehicle(
       ticketVerified: j['ticketVerified'] == true,
       price: _int(j['price']),
       paidAmount: _int(j['paidAmount']),
+      ownerKey: j['ownerKey'] as String?,
+      pickupMethod: PickupMethod.parse(j['pickupMethod'] as String?),
     );
 
 Payment paymentFromJson(Map<String, dynamic> j) => Payment(

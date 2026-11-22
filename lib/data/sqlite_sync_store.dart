@@ -46,6 +46,17 @@ class SqliteSyncStore implements SyncStore {
           centerId: v.centerId,
           payload: vehicleCreatePayload(v),
         );
+        final ownerProof = PickupProof.parse(r['owner_key_proof'] as String?);
+        final key = v.ownerKey;
+        if (key != null && ownerProof != null) {
+          await enqueueOp(
+            txn,
+            kind: 'vehicle.ownerkey',
+            entityId: v.id,
+            centerId: v.centerId,
+            payload: ownerKeyPayload(key: key, nonce: ownerProof.nonce, sig: ownerProof.sig),
+          );
+        }
         for (final pr in await txn.query('payments', where: 'vehicle_id = ?', whereArgs: [v.id], orderBy: 'paid_at ASC')) {
           final pay = Payment.fromMap(pr);
           await enqueueOp(
@@ -67,6 +78,8 @@ class SqliteSyncStore implements SyncStore {
               at: at,
               check: v.pickupCheck ?? PickupCheck.skipped,
               ticketVerified: v.ticketVerified,
+              method: v.pickupMethod ?? PickupMethod.manual,
+              proof: PickupProof.parse(r['pickup_proof'] as String?),
             ),
           );
         }
@@ -245,6 +258,14 @@ class SqliteSyncStore implements SyncStore {
   @override
   Future<void> updateLocalVehicleCode(String vehicleId, String code) =>
       _d.update('vehicles', {'code': code}, where: 'id = ?', whereArgs: [vehicleId]);
+
+  @override
+  Future<void> clearLocalOwnerKey(String vehicleId) => _d.update(
+        'vehicles',
+        {'owner_key': null, 'owner_key_proof': null},
+        where: 'id = ?',
+        whereArgs: [vehicleId],
+      );
 
   @override
   Future<void> dropLocalPayment(String paymentId) async {

@@ -109,6 +109,11 @@ class FakeStore implements SyncStore {
   @override
   Future<void> dropLocalPayment(String paymentId) async => droppedPayments.add(paymentId);
 
+  final List<String> clearedKeys = [];
+
+  @override
+  Future<void> clearLocalOwnerKey(String vehicleId) async => clearedKeys.add(vehicleId);
+
   @override
   Future<void> wipeAll() async {}
 }
@@ -292,6 +297,52 @@ void main() {
       await h.sync.syncNow();
       expect(store.ops, isEmpty);
       expect(store.failedSeqs, isEmpty);
+      h.dispose();
+    });
+
+    test('clé du client : envoyée avec sa preuve', () async {
+      final store = FakeStore([
+        op(1, 'vehicle.create', 'v1', center: 'c1'),
+        op(2, 'vehicle.ownerkey', 'v1', center: 'c1', payload: {'ownerKey': 'k', 'nonce': 'n', 'sig': 's'}),
+      ]);
+      final h = Harness(store, okServer);
+      await h.sync.syncNow();
+      expect(h.requests, contains('POST /vehicles/v1/owner-key'));
+      expect(store.ops, isEmpty);
+      expect(store.clearedKeys, isEmpty);
+      h.dispose();
+    });
+
+    test('clé refusée par le serveur : opération en échec et clé locale retirée', () async {
+      final store = FakeStore([
+        op(1, 'vehicle.ownerkey', 'v1', center: 'c1', payload: {'ownerKey': 'k', 'nonce': 'n', 'sig': 's'}),
+      ]);
+      final h = Harness(store, (req) async {
+        if (req.url.path == '/vehicles/v1/owner-key') {
+          return json(409, {'error': 'key_already_set', 'message': 'Une clé est déjà enrôlée pour ce véhicule.'});
+        }
+        return okServer(req);
+      });
+      await h.sync.syncNow();
+      expect(store.failedSeqs, {'1'});
+      expect(store.clearedKeys, ['v1']);
+      h.dispose();
+    });
+
+    test('preuve de remise invalide (422) : refus définitif, la suite continue', () async {
+      final store = FakeStore([
+        op(1, 'vehicle.collect', 'v1', center: 'c1', payload: {'pickupMethod': 'key'}),
+        op(2, 'payment.add', 'v2', center: 'c1', payload: {'id': 'p9', 'amount': 100}),
+      ]);
+      final h = Harness(store, (req) async {
+        if (req.url.path == '/vehicles/v1/collect') {
+          return json(422, {'error': 'invalid_proof', 'message': 'Preuve de remise invalide.'});
+        }
+        return okServer(req);
+      });
+      await h.sync.syncNow();
+      expect(store.failedSeqs, {'1'});
+      expect(store.ops, hasLength(1)); // l'opération en échec reste visible ; le paiement est parti
       h.dispose();
     });
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -9,6 +10,7 @@ import '../../core/icons.dart';
 import '../../core/plates.dart';
 import '../../core/theme.dart';
 import '../../data/models.dart';
+import '../../security/pickup_crypto.dart';
 import '../../state/app_controller.dart';
 import '../../state/query_cache.dart';
 import '../widgets/bars.dart';
@@ -84,6 +86,29 @@ class _TicketPageState extends State<TicketPage> {
     if (!mounted) return;
     await _load();
     if (mounted) showToast(context, 'Paiement enregistré.');
+  }
+
+  /// Enrôle le téléphone du client : il pourra seul prouver qu'il est le propriétaire à la sortie.
+  Future<void> _secure(Vehicle v, String centerName) async {
+    final ex = AgentExchange.enroll(
+      vehicleId: v.id,
+      code: v.code,
+      center: centerName,
+      plate: v.plate,
+    );
+    final res = await context.push<PickupProofResult>('/exchange', extra: ex);
+    if (res == null || !res.isOk || !mounted) return;
+    try {
+      await AppScope.read(context).enrollOwnerKey(v, key: res.key!, nonce: res.nonce!, sig: res.sig!);
+    } catch (e, st) {
+      ErrorReporter.report(e, st, where: 'enrôlement de la clé');
+      if (mounted) showToast(context, 'Enregistrement impossible. Réessayez.', error: true);
+      return;
+    }
+    HapticFeedback.mediumImpact();
+    if (!mounted) return;
+    await _load();
+    if (mounted) showToast(context, 'Véhicule sécurisé avec le téléphone du client.');
   }
 
   Future<void> _whatsapp(Vehicle v, String centerName) async {
@@ -223,6 +248,21 @@ class _TicketPageState extends State<TicketPage> {
               ),
             ],
           ),
+          const SizedBox(height: 14),
+          if (v.isSecured)
+            Banner2(
+              icon: AppIcons.shield,
+              fg: p.success,
+              bg: p.successTint,
+              text: 'Sécurisé : à la sortie, le client devra prouver son identité avec son téléphone.',
+            )
+          else if (!v.isCollected) ...[
+            GhostButton(
+              label: 'Sécuriser avec le téléphone du client',
+              icon: AppIcons.shield,
+              onPressed: () => _secure(v, centerName),
+            ),
+          ],
           const SizedBox(height: 14),
           Text(
             'Demandez au client de garder ce ticket (capture d\'écran ou WhatsApp). '

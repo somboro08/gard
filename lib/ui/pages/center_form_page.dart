@@ -209,6 +209,20 @@ class _CenterFormPageState extends State<CenterFormPage> {
                           ),
                         ),
                       ),
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () => context.push('/client'),
+                          icon: Icon(AppIcons.shield, color: p.goldText),
+                          label: Text(
+                            'Je suis client · Espace client',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: p.goldText,
+                            ),
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: 18),
                     ],
                     AppField(
